@@ -1,0 +1,13 @@
+# Board and workflow files stay local (same as the MultiProxy public repo)
+CLAUDE.md
+prompts/
+
+# Release zips are uploaded to GitHub Releases, not committed
+github-releases/*.zip
+
+node_modules/
+config.json
+state.json
+vortex-info-cache.json
+cache/
+*.log
