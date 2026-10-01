@@ -11,3 +11,12 @@ state.json
 vortex-info-cache.json
 cache/
 *.log
+
+# Board-owned lifecycle state (claude-workflow-board) -- checkoff/sent-session state, never committed
+prompts/.board-state.json
+
+# Rotating recovery backups of .board-state.json (claude-workflow-board, queue: board-state-backup-rotation) -- never committed
+prompts/.board-state.json.bak*
+
+# SQLite hybrid-architecture spike index (derived + rebuildable -- BUILD-PROMPT-sqlite-hybrid-spike.md)
+prompts/.board-index.sqlite*
