@@ -32,7 +32,7 @@ Stuck on anything? Check the **Help** tab inside ModPacer.
 
 ## 🤝 Credits
 
-Built with ideas and code from [Vortex](https://github.com/Nexus-Mods/Vortex) and [fomod-installer](https://github.com/Nexus-Mods/fomod-installer) (Nexus Mods), 7-Zip by Igor Pavlov, the [SkyrimNet Plugin Hub](https://github.com/MinLL/SkyrimNet-Plugins), fateless.ai (the icon and the Plugin Hub API), and the Vortex Bridge.
+Built with ideas and code from [Vortex](https://github.com/Nexus-Mods/Vortex) and [fomod-installer](https://github.com/Nexus-Mods/fomod-installer) (Nexus Mods), 7-Zip by Igor Pavlov, the [SkyrimNet Plugin Hub](https://github.com/MinLL/SkyrimNet-Plugins), fateless.ai (the icon and the Plugin Hub API), [Vortex Collection Tools](https://github.com/awesmdiver/vortex-collection-tools) (how ModPacer updates and removes mods in Vortex), and the Vortex Bridge.
 
 ## 📄 License
 
