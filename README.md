@@ -2,7 +2,7 @@
 
 ## What is ModPacer?
 
-ModPacer is a free Windows tool that connects your mod manager to the [SkyrimNet Plugin Hub](https://fateless.ai/plugins). It runs in your system tray and opens in your web browser. It checks the SkyrimNet mods you have installed, shows which ones have a new version, and lists the Hub mods you do not have yet. One click installs or updates them for you.
+ModPacer is a Windows tool that connects your mod manager to the [SkyrimNet Plugin Hub](https://fateless.ai/plugins). It runs in your system tray and opens in your web browser. It checks the SkyrimNet mods you have installed, shows which ones have a new version, and lists the Hub mods you do not have yet. One click installs or updates them for you.
 
 It works with **Vortex** and **Mod Organizer 2**.
 
