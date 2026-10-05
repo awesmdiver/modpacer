@@ -18,7 +18,7 @@ ModPacer does that for you. Open it, see at a glance what is out of date and wha
 ## 📋 What you need
 
 - **Windows.**
-- **SkyrimNet** installed.
+- **[SkyrimNet](https://github.com/MinLL/SkyrimNet-GamePlugin)** installed.
 - **Vortex** or **Mod Organizer 2**.
 
 ## 🚀 Getting started
