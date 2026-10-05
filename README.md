@@ -1,8 +1,4 @@
-<p align="center"><img src="web/public/modpacer-logo.png" width="128" alt="ModPacer logo"></p>
-
-# ModPacer
-
-Easily install new mods and keep them on pace with updates.
+<p align="center"><img src="assets/release-v1.0.0-banner.png" alt="ModPacer: easily install new mods and keep them on pace with updates"></p>
 
 ## What is ModPacer?
 
