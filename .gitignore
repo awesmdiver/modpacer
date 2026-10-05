@@ -4,6 +4,7 @@ prompts/
 
 # Release zips are uploaded to GitHub Releases, not committed
 github-releases/*.zip
+github-releases/*.exe
 
 node_modules/
 config.json
@@ -20,3 +21,9 @@ prompts/.board-state.json.bak*
 
 # SQLite hybrid-architecture spike index (derived + rebuildable -- BUILD-PROMPT-sqlite-hybrid-spike.md)
 prompts/.board-index.sqlite*
+
+# Terminals (claude-workflow-board): working copies of this project, never committed
+/terminals/
+
+# From release/public.gitignore
+release-staging/

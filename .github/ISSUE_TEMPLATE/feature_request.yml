@@ -1,0 +1,72 @@
+name: Idea or feature request
+description: Suggest something new, or an improvement to something ModPacer already does
+title: "[Idea]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Got an idea that would make keeping your mods up to date easier? We'd love to hear it!
+
+        You don't need a technical solution. Just telling us **what you're trying to do and what's slowing you down** is the most helpful part.
+
+        **Quick tip:** have a quick look through [existing ideas](https://github.com/awesmdiver/modpacer/issues?q=is%3Aissue+label%3Aenhancement) first to see if someone already suggested something similar.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: What is this about?
+      options:
+        - Checking for updates
+        - Updating mods
+        - Installing new mods (Mods not installed)
+        - Vortex or the Vortex Bridge
+        - Mod Organizer 2
+        - Setup or Settings
+        - Help or the guide
+        - Support for another game or another mod catalog
+        - Something brand new
+        - Something else / Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do, and what gets in the way?
+      description: Describe the friction or limitation you're running into today.
+      placeholder: e.g. "I have to open each mod's page myself to read what changed before I update."
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: How would you love to see this work?
+      description: Your idea for how ModPacer could handle this. No wrong answers!
+    validations:
+      required: false
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: How are you dealing with this right now?
+      description: (Optional) Another tool, a manual workaround, or just putting up with it?
+    validations:
+      required: false
+
+  - type: input
+    id: catalog
+    attributes:
+      label: Is this about a different game or catalog?
+      description: (Optional) ModPacer follows the SkyrimNet Plugin Hub today. If you'd like it to follow another catalog or game, tell us which.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Before submitting
+      options:
+        - label: I checked existing issues to see if this has already been suggested.
+          required: false

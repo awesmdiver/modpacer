@@ -1,0 +1,23 @@
+{
+  "name": "modpacer",
+  "version": "1.0.0",
+  "private": true,
+  "license": "GPL-3.0-only",
+  "description": "Easily install new mods and keep them on pace with updates.",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "web": "node server.js",
+    "check": "node server.js --check"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "fast-xml-parser": "^5.10.1",
+    "minimatch": "^10.2.6",
+    "semver": "^7.8.5"
+  },
+  "devDependencies": {
+    "jsdom": "^30.1.1"
+  }
+}

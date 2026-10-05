@@ -1,0 +1,342 @@
+/* Colors are 3 CSS variables (--accent, --bg, --text) set by app.js from SkyrimNet's own
+   Dashboard.yaml -- everything else below is mixed from them (color-mix), same approach as
+   design/mockup-skyrimnet-themes.html. The :root defaults here are Dragonborn's own colors, so the
+   page still looks right for the instant before the real theme loads (or if it never can). */
+:root {
+    accent-color: var(--accent);
+    --accent: #d4a855; --bg: #18181c; --text: #e8e6e1;
+    --status-success: #7cefab; --status-warning: #e8941a; --status-error: #f26060; --status-info: #60a5fa;
+    --panel: color-mix(in srgb, var(--text) 6%, var(--bg));
+    --line: color-mix(in srgb, var(--text) 16%, var(--bg));
+    --muted: color-mix(in srgb, var(--text) 75%, var(--bg));
+    /* The accent is a mid colour on purpose, and on some themes it is too faint to READ as text or to carry a button label (theme check,
+       2026-10-05: Parchment, Silver-Blood, Imperial). So accent used as TEXT or as a focus ring mixes toward the text colour, and an accent
+       FILL under a label mixes a little toward it; the plain --accent stays for borders, bars, dots and switches. */
+    --accent-text: color-mix(in srgb, var(--accent) 50%, var(--text));
+    --accent-text-strong: color-mix(in srgb, var(--accent) 30%, var(--text)); /* inside a tinted banner, where the backdrop is darker or redder */
+    --accent-fill: color-mix(in srgb, var(--accent) 70%, var(--text));
+}
+body { background:var(--bg); color:var(--text); font-family:system-ui,sans-serif; max-width:900px; margin:32px auto; padding:0 20px; line-height:1.45 }
+h1 { color:var(--text); font-size:1.5rem; margin:0 0 4px }
+h2 { color:var(--text); font-size:1.05rem; margin:0 0 4px }
+.subtitle { color:var(--muted); font-size:0.9rem; margin-bottom:0 }
+.card { background:var(--panel); border-radius:8px; padding:20px; margin:18px 0; border:1px solid var(--line) }
+.label { color:var(--muted); font-size:0.8rem }
+.info-tip { display:inline-flex; align-items:center; justify-content:center; width:13px; height:13px; border-radius:50%; border:1px solid var(--muted); font-size:0.65rem; cursor:help; margin-left:3px }
+.muted { color:var(--muted); font-size:0.8rem }
+.hint { color:var(--muted); font-size:0.85rem; margin:4px 0 14px }
+.error { color:var(--status-error); font-size:0.85rem }
+/* Base link style so a new link can never come out browser-blue/underlined again (director, from a
+   live screenshot, 2026-09-30: the old per-row "Show in folder" link had no class to style it, so
+   it fell straight back to the browser's own default blue+underline). Every themed link only ever
+   overrides color on top of this, never text-decoration. */
+a { color:var(--accent-text); text-decoration:none }
+a:hover { text-decoration:underline }
+.tabs { display:flex; gap:4px; border-bottom:1px solid var(--line); margin-bottom:18px }
+.tab { padding:8px 14px; font-size:0.85rem; color:var(--muted); cursor:pointer; border-bottom:2px solid transparent; user-select:none }
+.tab.active { color:var(--text); border-color:var(--accent) }
+button { font:inherit; font-size:0.8rem; border-radius:6px; padding:7px 14px; cursor:pointer; border:1px solid var(--line); background:var(--panel); color:var(--text); white-space:nowrap }
+button.primary { background:var(--accent-fill); border-color:var(--accent-fill); color:var(--bg) }
+button:hover { filter:brightness(1.15) }
+/* Disabled reads as clearly "off" in every theme: no accent fill, just a flat panel with muted text.
+   (Plain opacity left gold buttons looking almost live.) */
+input::placeholder, textarea::placeholder { color:var(--muted); opacity:1 }
+button:disabled, button.primary:disabled { background:var(--panel); border-color:var(--line); color:var(--muted); opacity:0.7; cursor:not-allowed; filter:none }
+/* Row action buttons (Update, Download) and Update all: a size down from the toolbar. */
+.row button, #updateAllBtn { font-size:0.75rem; padding:4px 11px }
+.top { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap }
+.summary { display:flex; gap:10px; flex-wrap:wrap; margin-top:14px }
+.stat { display:flex; align-items:center; gap:8px; border:1px solid var(--line); border-radius:8px; padding:10px 14px; background:var(--panel) }
+.stat .n { font-size:1.3rem; font-weight:600; line-height:1 }
+.stat .l { color:var(--muted); font-size:0.75rem }
+.stat.upd .n { color:var(--status-info) } .stat.nx .n { color:var(--status-warning) } .stat.ok .n { color:var(--status-success) }
+.row { display:grid; grid-template-columns: 1fr 170px auto; gap:14px; align-items:center; border:1px solid var(--line); border-radius:8px; padding:12px 16px; margin:10px 0; background:var(--panel) }
+.row > div:nth-child(3) { justify-self:end; text-align:right }
+.name { font-weight:600; font-size:0.92rem }
+.meta { color:var(--muted); font-size:0.75rem; margin-top:2px }
+.meta a { color:var(--accent-text); text-decoration:none }
+.ver { font-family:monospace; font-size:0.82rem }
+.ver .arrow { color:var(--muted); margin:0 6px }
+.ver .new { color:var(--accent-text) }
+.dt { color:var(--muted); font-size:0.72rem; margin-top:3px }
+.right { display:flex; flex-direction:column; align-items:flex-end; gap:8px }
+.icons { display:flex; gap:10px; font-size:0.95rem }
+.icons .done { color:var(--status-success) }
+.fomod { color:var(--muted); display:inline-flex; align-items:center }
+.fomod svg { display:block }
+.pill { font-size:0.72rem; border-radius:10px; padding:2px 9px; white-space:nowrap; display:inline-block; border:1px solid currentColor }
+.p-upd { color:var(--status-info) }
+.p-done { color:var(--status-success) }
+.p-ok { color:var(--muted) }
+.p-nx { color:var(--status-warning) }
+.p-dl { color:var(--status-info) }
+.p-err { color:var(--status-error) }
+.changes { grid-column:1 / -1; font-size:0.8rem; color:var(--text); background:var(--bg); border-radius:6px; padding:8px 12px; margin-top:4px }
+.link-ood-short { display:none }
+@media (max-width:640px) { .link-ood-long { display:none } .link-ood-short { display:inline } }
+.changes ul { margin:4px 0; padding-left:18px }
+.changes a { color:var(--accent-text) }
+.ch-heading { font-weight:600; color:var(--text); margin-top:6px }
+.ch-body.ch-collapsed { max-height:4.2em; overflow:hidden; position:relative; mask-image:linear-gradient(to bottom, black 60%, transparent 100%) }
+.ch-toggle { display:inline-block; margin-top:4px; color:var(--accent-text); font-size:0.75rem; text-decoration:none }
+.bar { height:5px; background:var(--line); border-radius:3px; margin-top:6px; overflow:hidden; width:120px }
+.bar i { display:block; height:5px; background:var(--accent) }
+/* Working, but no real percentage to show: a short block sliding back and forth (still when motion is reduced). */
+.bar.busy i { width:35%; animation:bar-busy 1.3s ease-in-out infinite alternate }
+@keyframes bar-busy { from { margin-left:0 } to { margin-left:65% } }
+@media (prefers-reduced-motion: reduce) { .bar.busy i { animation:none; width:100% } }
+.group-h { display:flex; justify-content:space-between; align-items:center; color:var(--muted); font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; margin:20px 0 6px }
+.legend { text-transform:none; letter-spacing:0; display:flex; gap:14px }
+.legend span { display:inline-flex; gap:5px; align-items:center }
+.legend-line { display:flex; justify-content:flex-end; color:var(--muted); font-size:0.75rem; margin:10px 0 0 }
+.legend-line:empty { display:none }
+/* Expandable sections: chevron + name + (count), the section's own action right-justified, the choice remembered. */
+.sec-h { cursor:pointer; user-select:none; flex-wrap:wrap; row-gap:6px }
+.sec-h .sec-t { display:inline-flex; align-items:center; gap:8px }
+.sec-h .chev { display:inline-block; font-size:0.65rem; transition:transform 0.15s }
+.sec.open > .sec-h .chev { transform:rotate(90deg) }
+.sec-h .cnt { color:var(--text) }
+.sec-h .grow { flex:1 }
+.sec-act { text-transform:none; letter-spacing:0 }
+.sec-act button { font-size:0.75rem; padding:4px 11px }
+.sec:not(.open) > .sec-body { display:none }
+/* A closed section shows just its name and count: its action (Install all) appear once it is open. Updates keeps Update all. */
+.sec:not(.open):not([data-section="updates"]) > .sec-h .sec-act { display:none }
+.sec-body .note { color:var(--muted); font-size:0.85rem; margin:8px 0 }
+.stat.ni .n { color:var(--text) } .stat.go { cursor:pointer }
+.stat.go:focus-visible { outline:1px solid var(--accent-text); outline-offset:2px }
+.hub-ico { color:var(--muted); display:inline-flex; align-items:center; text-decoration:none }
+.hub-ico svg, .hub-ico img { display:block }
+/* The Help tab: contents list on the left (sticky), the guide as openable sections on the right; a row above the guide on a narrow window. */
+.help-layout { display:grid; grid-template-columns:200px 1fr; gap:28px; align-items:start; margin-top:14px }
+.help-lead { color:var(--muted); font-size:0.9rem }
+.help-lead p { margin:4px 0 0 }
+.help-toc { position:sticky; top:12px; display:flex; flex-direction:column; gap:2px; font-size:0.82rem }
+.help-toc a { color:var(--muted); padding:6px 10px; border-left:2px solid var(--line); border-radius:0 6px 6px 0; text-decoration:none }
+.help-toc a:hover { color:var(--text); background:var(--panel) }
+.help-toc a.on { color:var(--text); border-color:var(--accent) }
+.help-sec { background:var(--panel); border:1px solid var(--line); border-radius:8px; margin:0 0 12px }
+.help-sec-h { padding:14px 16px; font-weight:600; font-size:0.95rem; color:var(--text); display:flex; align-items:center; text-transform:none; letter-spacing:0; margin:0 }
+.help-sec-h:focus-visible { outline:1px solid var(--accent-text); outline-offset:-1px }
+.help-body { padding:0 18px 16px 36px; font-size:0.88rem }
+.help-body p { margin:0 0 10px } .help-body ol, .help-body ul { margin:0 0 10px; padding-left:20px } .help-body li { margin:4px 0 }
+.help-body a { color:var(--accent-text) }
+.help-body code { background:var(--bg); border:1px solid var(--line); border-radius:4px; padding:0 5px; font-size:0.82rem }
+.help-body .callout { margin:0 0 12px; font-size:0.85rem }
+.help-tiles { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:6px 0 10px }
+.help-tile { align-items:flex-start }
+.help-tile-text { display:flex; flex-direction:column; gap:2px }
+.help-tile-name { color:var(--text); font-size:0.85rem }
+.help-tile-d { color:var(--muted); font-size:0.8rem }
+@media (max-width:640px) { .help-layout { grid-template-columns:1fr } .help-toc { position:static; flex-direction:row; flex-wrap:wrap } .help-tiles { grid-template-columns:1fr } }
+.hub-ico img { width:16px; height:16px }
+.hub-ico:hover img, .hub-ico:focus-visible img { filter:brightness(1.25) } /* a brand mark: no colour change, just a touch brighter */
+.counts { color:var(--muted); font-size:0.72rem; margin-top:2px }
+.nsfw-pill { display:inline-block; border:1px solid var(--status-warning); color:var(--status-warning); border-radius:999px; padding:0 8px; font-size:0.68rem; font-weight:600; letter-spacing:0.03em; margin-left:8px; vertical-align:middle }
+.ni-more { grid-column:1 / -1; margin-top:2px }
+.ni-more .tagline { color:var(--muted); font-size:0.82rem }
+.disabled-text { min-height:4.2em; margin:0 } /* three lines whatever the text, so the dialog never changes size */
+.ni-same { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px 12px; margin-top:6px; color:var(--muted); font-size:0.82rem }
+.ni-same-btns { display:flex; gap:8px; margin-left:auto }
+.ni-same-btns button { padding:3px 10px; font-size:0.78rem }
+.req-warn { color:var(--status-warning); font-size:0.8rem; margin-top:6px }
+.req-warn b { font-weight:600 }
+.confirm-list { margin:8px 0 4px 18px; padding:0; color:var(--muted); font-size:0.85rem }
+.field { margin:16px 0 }
+.field input[type=text], .field input[type=password] { width:100%; box-sizing:border-box; background:var(--bg); border:1px solid var(--line); color:var(--text); border-radius:6px; padding:8px 10px; font:inherit; font-size:0.85rem }
+.inline { display:flex; gap:8px }
+.toggle { display:flex; gap:10px; align-items:flex-start; margin:14px 0; font-size:0.9rem; cursor:pointer }
+.sw { width:34px; height:18px; border-radius:9px; background:var(--accent); position:relative; flex-shrink:0; margin-top:2px }
+.sw::after { content:""; position:absolute; top:2px; left:18px; width:14px; height:14px; border-radius:50%; background:var(--bg); transition:left 0.1s }
+.sw.off { background:var(--line) } .sw.off::after { left:2px }
+.ok-t { color:var(--status-success); font-size:0.8rem }
+@media (max-width:640px) { .row { grid-template-columns:1fr } }
+.overlay { position:fixed; inset:0; background:#000a; display:flex; align-items:center; justify-content:center; z-index:100 }
+.confirm-card { width:420px; max-width:90vw }
+/* Pop-ups keep their size (DESIGN.md): a name is one line with an ellipsis, a status area is a fixed number of lines, the full text is the hover / focus tooltip. */
+.one-line { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0 }
+.clamp2, .clamp3 { display:-webkit-box; -webkit-box-orient:vertical; overflow:hidden; overflow-wrap:anywhere; line-height:1.4 }
+.clamp2 { -webkit-line-clamp:2; max-height:2.8em }
+.clamp3 { -webkit-line-clamp:3; max-height:4.2em }
+#confirmTitle { white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+.deploy-head { display:flex; align-items:baseline; justify-content:space-between; gap:12px }
+.deploy-elapsed { font-variant-numeric:tabular-nums; min-width:10ch; text-align:right; white-space:nowrap }
+.deploy-body { height:132px; display:flex; flex-direction:column }
+.deploy-stage { flex:1; min-height:0; display:flex; flex-direction:column }
+.deploy-status { height:2.8em; margin-top:8px; flex:none }
+.deploy-status p { margin:0; font-size:0.8rem }
+.deploy-scroll { overflow-y:auto; margin:4px 0 8px; flex:1; min-height:0 }
+.kv > div { min-width:0 }
+.kv .clamp2 { min-height:2.8em } /* a two-line slot whether the text takes one line or two */
+.confirm-card .confirm-list { max-height:40vh; overflow-y:auto }
+.kv { display:grid; grid-template-columns:150px 1fr; gap:6px 12px; font-size:0.85rem; margin:12px 0 }
+/* The FOMOD screen (web/public/fomod-picker.js). Ported from vortex-collection-tools' own picker styles (keep the two in
+   step), recoloured with this app's theme variables only. A fixed size, like Vortex's own dialog, so it never resizes
+   from option to option; each column scrolls on its own. */
+.fp-backdrop { position:fixed; inset:0; background:#000a; display:none; align-items:center; justify-content:center; z-index:100 }
+.fp-backdrop.open { display:flex }
+.fp-modal { width:60vw; height:60vh; min-width:min(720px,96vw); min-height:min(460px,92vh); display:flex; flex-direction:column; overflow:hidden; background:var(--panel); border:1px solid var(--accent); border-radius:8px; box-shadow:0 20px 60px #0008 }
+.fp-head { position:relative; padding:18px 44px 12px 24px; border-bottom:1px solid var(--line); flex:none; background:linear-gradient(180deg, color-mix(in srgb, var(--accent) 12%, transparent), transparent) }
+.fp-close { position:absolute; top:12px; right:14px; padding:2px 9px; font-size:1.1rem; line-height:1.2; background:transparent; border-color:transparent; color:var(--muted) }
+.fp-title { font-size:1.05rem; font-weight:700; margin:0 0 4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+.fp-step { font-size:0.82rem; color:var(--muted); margin:0 }
+.fp-body { flex:1; display:flex; flex-direction:row; min-height:0; overflow:hidden }
+.fp-options { flex:1; padding:16px 24px; overflow-y:auto }
+.fp-group { margin-bottom:20px }
+.fp-group:last-child { margin-bottom:0 }
+.fp-group-name { font-size:0.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--accent-text); margin:0 0 8px; padding-bottom:6px; border-bottom:1px solid color-mix(in srgb, var(--accent) 22%, transparent) }
+.fp-group-required { color:var(--muted); font-weight:400; text-transform:none; letter-spacing:normal }
+.fp-option { display:flex; align-items:center; gap:9px; padding:3px 8px; border-radius:6px; cursor:pointer; font-size:0.82rem; line-height:1.3 }
+.fp-option:hover { background:color-mix(in srgb, var(--text) 5%, transparent) }
+.fp-option.is-active { background:color-mix(in srgb, var(--accent) 14%, transparent); outline:1px solid var(--accent) }
+.fp-option.is-disabled { opacity:.55; cursor:default }
+.fp-option input { width:15px; height:15px; accent-color:var(--accent); flex:none }
+.fp-preview { background:var(--bg); border-left:1px solid var(--line); padding:16px 20px; display:flex; flex-direction:column; gap:12px; flex:none; width:45%; overflow-y:auto }
+/* A fixed 16:10 box, so the panel never jumps between a wide and a tall picture; the picture is fitted inside it. */
+.fp-preview-image { box-sizing:border-box; width:100%; aspect-ratio:16 / 10; flex:none; border-radius:8px; background:var(--panel); border:1px solid var(--line); display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:0.72rem; padding:8px; text-align:center; overflow:hidden }
+.fp-preview-image img { max-width:100%; max-height:100%; width:auto; height:auto; object-fit:contain; border-radius:6px; cursor:zoom-in }
+.fp-preview-desc { overflow-wrap:anywhere; font-size:0.8rem; color:var(--text); line-height:1.6; white-space:pre-wrap }
+.fp-preview-empty { color:var(--muted); font-size:0.8rem; font-style:italic }
+#fomodPickerError.hidden { display:none }
+/* Muted scrollbars for everything that scrolls in this screen: thin, no arrows, a see-through track, a thumb in the muted text colour. */
+.fp-options, .fp-preview, .fp-body { scrollbar-width:thin; scrollbar-color:color-mix(in srgb, var(--text) 24%, transparent) transparent }
+.fp-options:hover, .fp-preview:hover, .fp-body:hover { scrollbar-color:color-mix(in srgb, var(--text) 42%, transparent) transparent }
+@supports not (scrollbar-width: thin) {
+    .fp-options::-webkit-scrollbar, .fp-preview::-webkit-scrollbar, .fp-body::-webkit-scrollbar { width:8px; height:8px }
+    .fp-options::-webkit-scrollbar-track, .fp-preview::-webkit-scrollbar-track, .fp-body::-webkit-scrollbar-track { background:transparent }
+    .fp-options::-webkit-scrollbar-thumb, .fp-preview::-webkit-scrollbar-thumb, .fp-body::-webkit-scrollbar-thumb { background:color-mix(in srgb, var(--text) 24%, transparent); border-radius:4px }
+    .fp-options::-webkit-scrollbar-thumb:hover, .fp-preview::-webkit-scrollbar-thumb:hover, .fp-body::-webkit-scrollbar-thumb:hover { background:color-mix(in srgb, var(--text) 42%, transparent) }
+    .fp-options::-webkit-scrollbar-button, .fp-preview::-webkit-scrollbar-button, .fp-body::-webkit-scrollbar-button { display:none }
+}
+.fp-zoom { position:fixed; inset:0; z-index:110; background:#000d; display:none; align-items:center; justify-content:center; padding:24px; cursor:zoom-out }
+.fp-zoom.open { display:flex }
+.fp-zoom img { max-width:90vw; max-height:90vh; width:auto; height:auto; object-fit:contain; border-radius:8px; cursor:default }
+.fp-foot { flex:none; padding:12px 24px; border-top:1px solid var(--line); display:flex; align-items:center; justify-content:flex-end; gap:12px; background:linear-gradient(0deg, color-mix(in srgb, var(--accent) 12%, transparent), transparent) }
+/* A button label never wraps: the button grows to fit it, and only a label longer than the footer is cut with an ellipsis (the full name is its hover text). */
+.fp-foot button { flex:0 1 auto; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+.fp-progress { flex:1 1 0; min-width:40px; height:6px; border-radius:999px; background:var(--line); overflow:hidden }
+.fp-progress-fill { height:100%; background:var(--accent); transition:width .2s ease }
+@media (max-width:700px) { .fp-modal { width:96vw; height:92vh } .fp-body { flex-direction:column; overflow-y:auto } .fp-options { flex:none; overflow:visible } .fp-preview { width:auto; border-left:0; border-top:1px solid var(--line); overflow:visible } }
+
+/* Callouts -- same severity convention as Vortex Collection Tools' own (that project's DESIGN.md
+   "Callout severity conventions"): critical = a real, blocking problem (🛑, red). Only "critical"
+   is needed here so far (the "no download folder" banner); add the other three severities the
+   same way if a future feature needs them. */
+.callout { border-radius:8px; padding:14px 18px; margin:0 0 18px; border:1px solid }
+.callout { --muted: color-mix(in srgb, var(--text) 85%, var(--bg)) }
+.callout--critical { background:color-mix(in srgb, var(--status-error) 15%, var(--bg)); border-color:var(--status-error) }
+.callout--warning { background:color-mix(in srgb, var(--status-warning) 15%, var(--bg)); border-color:var(--status-warning) }
+.callout--success { background:color-mix(in srgb, var(--status-success) 15%, var(--bg)); border-color:var(--status-success) }
+.callout--notice { background:color-mix(in srgb, var(--status-info) 15%, var(--bg)); border-color:var(--status-info) }
+.callout__title { font-weight:700; margin-bottom:4px; text-indent:-1.5em; padding-left:1.5em }
+.callout__body { padding-left:1.5em }
+.callout a { color:var(--accent-text-strong) }
+/* The finished-batch Deploy banner: text on the left, the two buttons on the right (they wrap under the text on a narrow window). */
+/* A banner's buttons: their own right-justified row under the text, primary last (DESIGN.md, "Buttons sit on the right"). */
+.callout__actions { display:flex; justify-content:flex-end; gap:10px; margin-top:12px }
+/* The finished-batch banner is the one banner whose buttons share the row with its (one or two short) lines: tight, centred, buttons on the right.
+   On a narrow window the buttons wrap under the text, still right-justified. */
+.deploy-banner { display:flex; flex-wrap:wrap; align-items:center; gap:8px 16px; margin:12px 0 0; padding:12px 18px }
+.deploy-banner__text { flex:1 1 240px; min-width:0 }
+.deploy-banner .callout__title { margin-bottom:0 }
+.deploy-banner .callout__body { margin-top:2px }
+.deploy-banner .callout__actions { margin:0 0 0 auto }
+.deploy-banner .su-dot { display:inline-block; vertical-align:middle; margin-right:8px }
+.btn-muted { color:color-mix(in srgb, var(--text) 82%, var(--bg)) }
+.btn-muted:hover { color:var(--text); filter:none }
+
+/* Mod manager choice (queue: ask-which-mod-manager, 2026-10-01) */
+.seg { display:inline-flex; border:1px solid var(--line); border-radius:6px; overflow:hidden; margin:4px 0 6px }
+.seg span { padding:6px 14px; font-size:0.82rem; color:var(--muted); cursor:pointer; user-select:none }
+.seg span.on { background:var(--accent-fill); color:var(--bg) }
+.choice { display:flex; gap:12px; align-items:flex-start; border:1px solid var(--line); border-radius:8px; padding:12px 14px; margin:10px 0; cursor:pointer }
+.choice:has(input:checked) { border-color:var(--accent) }
+.choice input { margin-top:3px }
+#helperStatus { font-size:0.85rem; margin:6px 0 0 }
+#helperStatus .ok-t { margin:0 }
+/* Help bubbles: a small ? that opens on hover/focus AND on click/tap; closes on click-away. */
+.help { display:inline-flex; align-items:center; justify-content:center; width:15px; height:15px; border-radius:50%; border:1px solid var(--muted); color:var(--muted); font-size:0.68rem; cursor:help; margin-left:4px; user-select:none }
+.help:hover, .help:focus, .help.open { border-color:var(--accent-text); color:var(--accent-text); outline:none }
+/* The help bubble floats over the page (an overlay), so opening it never pushes the fields below it down. */
+.field { position:relative }
+.help-pop { display:none; position:absolute; z-index:30; left:0; top:26px; width:min(520px, calc(100vw - 64px)); border:1px solid var(--line); background:var(--bg); border-radius:10px; padding:16px 18px; font-size:0.82rem; color:var(--text); line-height:1.5; box-shadow:0 12px 32px rgba(0,0,0,0.55) }
+.help-pop .help-title { font-weight:700; font-size:0.9rem; margin-bottom:6px }
+.help-pop p { margin:0 0 10px; color:var(--muted) }
+.help-pop p:last-child { margin-bottom:0 }
+.help-pop dl { margin:0 0 12px; display:grid; gap:10px }
+.help-pop dt { font-weight:600; color:var(--accent-text); margin-bottom:2px }
+.help-pop dd { margin:0; padding-left:12px; border-left:2px solid var(--line) }
+.help-pop .help-default { display:block; margin-top:3px; color:var(--muted); font-size:0.76rem }
+.help-pop code { font-family:ui-monospace,Consolas,monospace; font-size:0.74rem; color:var(--text); word-break:break-all }
+.help-pop .help-note { border-top:1px solid var(--line); padding-top:10px; color:var(--text) }
+.help-pop.open { display:block }
+
+/* "Start Vortex" popup (queue: ask-to-start-vortex, 2026-10-01): a plain spinner -- there is nothing to measure. */
+.spinner { width:16px; height:16px; border:2px solid var(--line); border-top-color:var(--accent); border-radius:50%; animation:spin 0.9s linear infinite; flex-shrink:0 }
+@keyframes spin { to { transform:rotate(360deg) } }
+
+.app-version { color:var(--muted); font-size:0.75rem; font-weight:400; margin-left:6px }
+
+/* "I make QOL mods to make things easier." (queue: more-from-me, 2026-10-01) -- bottom of Settings; this tool's own theme colours. */
+#moreFromMe h2 { margin-bottom:4px }
+.mfm-lead { color:var(--muted); font-size:0.9rem; margin:2px 0 18px }
+.mfm-tools { display:grid; grid-template-columns:repeat(3, 1fr); gap:14px }
+.mfm-tool { border:1px solid var(--line); border-radius:10px; padding:16px; background:color-mix(in srgb, var(--text) 9%, var(--bg)); display:flex; flex-direction:column; gap:8px }
+.mfm-tool.mfm-here { border-color:color-mix(in srgb, var(--accent) 55%, transparent) }
+.mfm-name { font-weight:700; font-size:0.95rem }
+.mfm-desc { color:var(--muted); font-size:0.83rem; flex:1 }
+.mfm-foot { display:flex; justify-content:space-between; align-items:center; margin-top:4px }
+.mfm-gh { font-size:0.8rem }
+.mfm-here-tag { font-size:0.68rem; color:var(--accent-text); border:1px solid color-mix(in srgb, var(--accent) 45%, transparent); border-radius:8px; padding:0 8px }
+.mfm-support { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-top:22px; padding-top:18px; border-top:1px solid var(--line) }
+.mfm-txt { flex:1; min-width:220px; font-size:0.88rem }
+.mfm-btn { display:inline-flex; align-items:center; font-size:0.82rem; font-weight:600; border-radius:8px; padding:8px 16px; color:#fff; text-decoration:none }
+.mfm-btn:hover { filter:brightness(1.12); text-decoration:none }
+@media (max-width:760px) { .mfm-tools { grid-template-columns:1fr } }
+
+/* First-run setup pop-up (queue: first-run-setup-steps, 2026-10-03). Matches design/mockup-first-run-setup.html; every
+   colour comes from the SkyrimNet theme variables. Steps and chips never fill on hover; dots are status only. */
+.su-modal { position:relative; width:720px; max-width:94vw; max-height:92vh; overflow-y:auto; margin:0; padding:24px 28px; border-radius:14px; box-shadow:0 12px 40px rgba(0,0,0,0.5) }
+.su-modal h2 { font-size:1.15rem; margin:0 0 6px }
+.su-stepper { display:flex; gap:6px; margin:0 0 22px; border-bottom:1px solid var(--line) }
+.su-stp { flex:1 1 auto; padding:8px 6px 11px; border-bottom:2px solid transparent; margin-bottom:-1px; color:var(--muted); font-size:0.86rem; display:flex; gap:8px; align-items:center; min-width:0; user-select:none }
+.su-stp .n { width:22px; height:22px; border-radius:50%; border:1px solid var(--line); display:grid; place-items:center; font-size:0.75rem; flex:none }
+.su-stp .t { white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+.su-stp.done { color:var(--text) } .su-stp.done .n { border-color:var(--status-success); color:var(--status-success) }
+.su-stp.done[data-su] { cursor:pointer }
+.su-stp.cur { color:var(--text); border-bottom-color:var(--accent) } .su-stp.cur .n { border-color:var(--accent); color:var(--accent-text) }
+.su-stp:focus-visible { outline:1px solid var(--accent-text); outline-offset:2px }
+@media (max-width:620px) { .su-stp .t { display:none } .su-modal { padding:20px 16px } }
+.su-row { display:flex; gap:10px; align-items:center }
+.su-path { flex:1; min-width:0; background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:9px 12px; font-family:Consolas,monospace; font-size:0.82rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.su-path.empty { color:var(--muted); font-family:inherit }
+.su-input { flex:1; min-width:0; box-sizing:border-box; background:var(--bg); border:1px solid var(--line); color:var(--text); border-radius:8px; padding:9px 12px; font:inherit; font-size:0.85rem }
+.su-lbl { font-size:0.82rem; color:var(--muted); margin:16px 0 6px }
+.su-note { color:var(--muted); font-size:0.85rem; border-left:2px solid var(--line); padding-left:12px; margin:8px 0 }
+.su-status { display:flex; gap:8px; align-items:center; font-size:0.88rem; margin:8px 0 0 }
+.su-status.su-top { margin-top:14px; align-items:flex-start } .su-status.su-top .su-dot { margin-top:7px }
+.su-status.su-gap { margin:0 0 18px }
+.su-dot { width:9px; height:9px; border-radius:50%; flex:none; background:var(--status-info) }
+.su-dot.ok { background:var(--status-success) } .su-dot.warn { background:var(--status-warning) } .su-dot.info { background:var(--status-info) }
+.su-dot.err { background:var(--status-error); animation:su-pulse 1.6s ease-in-out infinite }
+@keyframes su-pulse { 50% { opacity:0.35 } }
+.su-nav { display:flex; justify-content:space-between; align-items:center; margin-top:24px; gap:10px }
+.su-nav-r { display:flex; align-items:center; gap:8px }
+button.su-link { background:none; border:0; color:var(--muted); font-size:0.85rem; padding:0 6px; margin-right:6px }
+button.su-link:hover { filter:none; color:var(--text); text-decoration:underline }
+.su-nav > span:first-child button.su-link { margin-right:0; padding-left:0 }
+.su-close { position:absolute; top:14px; right:20px; margin:0 }
+button.su-muted { background:none; color:var(--muted) }
+.su-big { font-size:1.02rem; margin:0 }
+.su-bar { height:6px; border-radius:3px; background:var(--line); overflow:hidden; margin:12px 0 }
+.su-bar i { display:block; height:100%; width:35%; background:var(--accent); animation:su-slide 1.4s ease-in-out infinite }
+@keyframes su-slide { 0% { margin-left:-35% } 100% { margin-left:100% } }
+.su-unfinished { margin:22px 0 18px } .su-unfinished button { margin-left:8px }
+.su-unfinished > span:nth-child(2) { flex:1 } /* the text on the left, Finish setup on the right of the same line */
+#suBody code { font-family:Consolas,monospace; font-size:0.82rem }
+.su-status.su-gap-s { margin:0 0 6px }
+.su-list { margin:14px 0 4px 40px; padding:0; font-size:0.92rem }
+
+/* A callout whose title is a plain sentence (no leading icon to hang): no hanging indent. */
+.callout--plain .callout__title { text-indent:0; padding-left:0; font-weight:600 }
+.callout--plain .callout__body { padding-left:0; margin-top:10px }

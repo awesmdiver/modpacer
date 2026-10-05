@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ModPacer</title>
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="tabs">
+  <div class="tab active" data-tab="main">Mods</div>
+  <div class="tab" data-tab="settings">Settings</div>
+  <div class="tab" data-tab="help">Help</div>
+</div>
+
+<div id="help" style="display:none">
+  <div class="card" id="helpBody"><p class="muted">Loading the guide&hellip;</p></div>
+</div>
+
+<div id="main">
+  <div id="downloadFolderBanner"></div>
+  <div id="vortexHelperBanner"></div>
+  <div id="helperNotInstalledBanner"></div>
+  <div class="card">
+    <div class="top">
+      <div>
+        <h1>ModPacer <span class="app-version" id="appVersion"></span></h1>
+        <div class="subtitle" id="subtitle">Checking...</div>
+      </div>
+      <div class="inline">
+        <button id="checkNowBtn">Check now</button>
+        <button id="openDownloadFolderBtn">Open download folder</button>
+        <button class="primary" id="downloadAllBtn" style="display:none">Download all</button>
+      </div>
+    </div>
+    <div class="summary" id="summary"></div>
+    <div class="legend-line" id="legendLine"></div>
+    <div id="retryNote" style="display:none;font-size:1rem;font-weight:600;margin-top:12px">Please be patient while Vortex checks the status of your mods.</div>
+    <div id="deployLine"></div>
+    <p class="error" id="topError" style="display:none"></p>
+    <div class="su-status su-unfinished callout callout--warning" id="setupBanner" style="display:none"></div>
+  </div>
+
+  <div class="card">
+    <div id="pluginList"></div>
+  </div>
+</div>
+
+<div id="settings" style="display:none">
+  <div class="card">
+    <h2>Settings</h2>
+
+    <div id="helperStatus" class="field"></div>
+
+    <div class="field">
+      <div class="label">Downloads folder <span class="help" data-help="downloads" tabindex="0" role="button" aria-label="Help">?</span></div>
+      <div class="help-pop" id="help-downloads" role="tooltip">
+        <div class="help-title">Where your downloaded updates go</div>
+        <p>Pick your mod manager's downloads folder so it sees them right away:</p>
+        <dl>
+          <dt>Vortex</dt><dd>Settings &rarr; Download &rarr; Download Folder</dd>
+          <dt>Mod Organizer 2</dt><dd>Settings &rarr; Paths &rarr; Downloads</dd>
+        </dl>
+        <p>Or pick any folder you like if you'd rather add them to your mod manager by hand.</p>
+      </div>
+      <div class="inline"><input type="text" id="downloadFolderInput" readonly><button data-browse="downloadFolderInput" data-title="Choose where to save mod updates">Browse&hellip;</button></div>
+    </div>
+
+    <div class="field" id="oldVersionsField">
+      <div class="label">Old versions</div>
+      <label class="toggle"><span class="sw" id="deleteOldDownloadToggle"></span><span><b>Delete the old download after a successful update</b><br><span class="muted">Off: the old download stays in your Downloads folder.</span></span></label>
+    </div>
+
+    <div class="field">
+      <div class="label">Your Skyrim folder</div>
+      <div class="inline"><input type="text" id="skyrimInstallPathInput" readonly><button data-browse="skyrimInstallPathInput" data-title="Choose your Skyrim install folder">Browse&hellip;</button></div>
+      <p class="ok-t" id="skyrimInstallStatus"></p>
+    </div>
+
+    <div class="field">
+      <div class="label">Mod Staging Folder <span class="help" data-help="staging" tabindex="0" role="button" aria-label="Help">?</span></div>
+      <div class="help-pop" id="help-staging" role="tooltip">
+        <div class="help-title">Where your installed mods live</div>
+        <p>Choose the folder where your mod manager keeps your installed mod files:</p>
+        <dl>
+          <dt>Vortex</dt>
+          <dd>Look in Settings &rarr; Mods &rarr; Mod Staging Folder
+            <span class="help-default">Default: <code>C:\Users\&lt;You&gt;\AppData\Roaming\Vortex\skyrimse\mods</code> or a custom drive folder</span></dd>
+          <dt>Mod Organizer 2 (MO2)</dt>
+          <dd>Look in Settings &rarr; Paths &rarr; Mods
+            <span class="help-default">Default: inside your MO2 portable folder under <code>mods</code>, or <code>%LOCALAPPDATA%\ModOrganizer\&lt;Instance&gt;\mods</code></span></dd>
+        </dl>
+        <p class="help-note"><b>Note:</b> Don't choose your game's own folder or the Data folder. Pick the folder your mod manager uses instead.</p>
+      </div>
+      <div class="inline"><input type="text" id="vortexStagingFolderInput" readonly><button data-browse="vortexStagingFolderInput" data-title="Choose your Vortex mods staging folder">Browse&hellip;</button></div>
+    </div>
+
+    <div class="field">
+      <div class="label">Nexus API key (Premium members)</div>
+      <div id="nexusKeyField"></div>
+      <p class="hint">If you have Nexus Premium, mods hosted on Nexus can download automatically too. Find your key on Nexus under <b>Site preferences &rarr; API keys</b>. Without Premium, you'll get a link to the mod's Nexus page instead.</p>
+    </div>
+
+    <div class="field" id="notInstalledSettings">
+      <div class="label">Mods not installed</div>
+      <label class="toggle"><span class="sw off" id="showAdultToggle"></span><span><b>Show adult (NSFW) mods in Mods not installed</b><br><span class="muted">Mods you already have installed always show.</span></span></label>
+    </div>
+
+    <div class="field" id="pluginsPageSettings">
+      <div class="label">Plugins page</div>
+      <label class="toggle"><span class="sw" id="tellHubToggle"></span><span><b>Tell the plugins page when I install or update a mod</b><br><span class="muted">Authors see their download counts. Only the mod's name and version are sent, nothing about you.</span></span></label>
+    </div>
+
+    <label class="toggle" id="checkOnVortexStartLabel"><span class="sw" id="checkOnVortexStartToggle"></span><span><b>Check when Vortex starts</b><br><span class="muted">Runs quietly in the background and lets you know when there's something new.</span></span></label>
+    <label class="toggle"><span class="sw" id="autoDownloadToggle"></span><span><b>Download updates automatically</b><br><span class="muted">Turn this off if you'd rather see what's new and choose what to download yourself.</span></span></label>
+    <div class="field" style="display:flex;justify-content:flex-end"><button class="su-muted" id="runSetupAgainBtn">Run setup again</button></div>
+  </div>
+
+  <div class="card" id="moreFromMe"></div>
+</div>
+
+<div id="modManagerOverlay" class="overlay" style="display:none">
+  <div class="card su-modal" role="dialog" aria-labelledby="suTitle">
+    <button class="su-link su-close" id="suCloseBtn" style="display:none">Close</button>
+    <div class="su-stepper" id="suStepper"></div>
+    <div id="suBody"></div>
+  </div>
+</div>
+
+<div id="startVortexOverlay" class="overlay" style="display:none">
+  <div class="card confirm-card" role="dialog" aria-labelledby="startVortexTitle">
+    <h2 id="startVortexTitle">Start Vortex</h2>
+    <div id="startVortexAsk">
+      <p class="hint">ModPacer installs updates through Vortex. Open Vortex, then click Continue.</p>
+      <div class="inline" style="justify-content:flex-end;margin-top:14px">
+        <button id="startVortexOpenBtn" style="display:none">Open Vortex for me</button>
+        <button id="startVortexCancelBtn">Cancel</button>
+        <button class="primary" id="startVortexContinueBtn">Continue</button>
+      </div>
+    </div>
+    <div id="startVortexWait" style="display:none">
+      <div class="inline" style="align-items:center;margin:14px 0 6px"><span class="spinner" aria-hidden="true"></span><span>Vortex is starting. This can take a minute.</span></div>
+      <p class="muted" id="startVortexSlow" style="display:none">Still waiting. Vortex can take a minute to finish loading.</p>
+      <div class="inline" style="justify-content:flex-end;margin-top:14px"><button id="startVortexWaitCancelBtn">Cancel</button></div>
+    </div>
+  </div>
+</div>
+
+<div id="deployOverlay" class="overlay" style="display:none">
+  <div class="card confirm-card deploy-card" role="dialog" aria-labelledby="deployTitle">
+    <div class="deploy-head"><h2 id="deployTitle">Deploy</h2><span class="deploy-elapsed muted" id="deployElapsed" style="display:none"></span></div>
+    <div class="deploy-body">
+      <div class="deploy-stage" id="deployAsk">
+        <p class="hint clamp3" id="deployText"></p>
+        <div class="inline" style="justify-content:flex-end;margin-top:auto">
+          <button id="deployCancelBtn">Cancel</button>
+          <button class="primary" id="deployConfirmBtn">Deploy</button>
+        </div>
+      </div>
+      <div class="deploy-stage" id="deployBusy" style="display:none">
+        <div class="inline" style="align-items:center;margin:6px 0"><span class="spinner" aria-hidden="true"></span><span>Deploying&hellip;</span></div>
+        <div class="bar busy" id="deployBar" style="width:100%"><i></i></div>
+        <div class="deploy-status">
+          <p class="muted clamp2" id="deployLive" tabindex="0"></p>
+          <p class="hint clamp2" id="deployBlocked" tabindex="0" style="display:none"></p>
+        </div>
+      </div>
+      <div class="deploy-stage" id="deployFailed" style="display:none">
+        <p class="hint deploy-scroll" id="deployFailedText" tabindex="0">Vortex could not complete the deployment. You can try again from here, or open Vortex and click Deploy Mods directly.</p>
+        <div class="inline" style="justify-content:flex-end;margin-top:auto">
+          <button id="deployFailCancelBtn">Cancel</button>
+          <button class="primary" id="deployRetryBtn">Try again</button>
+        </div>
+      </div>
+      <div class="deploy-stage" id="deployDone" style="display:none">
+        <p id="deployDoneText" style="margin:0 0 10px;font-size:1rem;font-weight:600">Deployment is complete. Enjoy the game.</p>
+        <div class="req-warn" id="deployDoneNote" style="display:none;margin:0 0 10px">&#9888;&#65039; Not all plugins could be enabled. Check Vortex and manually enable them.</div>
+        <div class="inline" style="justify-content:flex-end;margin-top:auto">
+          <button class="primary" id="deployDoneBtn">OK</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Turning the adult switch on asks first (the same question the SkyrimNet plugins page asks). The answer Yes is remembered on this PC. -->
+<div id="adultOverlay" class="overlay" style="display:none">
+  <div class="card confirm-card" role="dialog" aria-labelledby="adultTitle">
+    <h2 id="adultTitle">Adult content</h2>
+    <p class="hint">Some mods in the Hub are made for adults. Are you 18 or older?</p>
+    <div class="inline" style="justify-content:flex-end;margin-top:14px">
+      <button class="btn-muted" id="adultNoBtn">No, take me back</button>
+      <button class="primary" id="adultYesBtn">Yes, I am 18 or older</button>
+    </div>
+  </div>
+</div>
+
+<!-- Update on a mod that is switched off in Vortex (also once for Update all): enable it with the update, or keep it off. Fixed size: the text is clamped. -->
+<div id="disabledOverlay" class="overlay" style="display:none">
+  <div class="card confirm-card" role="dialog" aria-labelledby="disabledText">
+    <p class="hint clamp3 disabled-text" id="disabledText" tabindex="0"></p>
+    <div class="inline" style="justify-content:flex-end;margin-top:14px">
+      <button id="disabledCancelBtn">Cancel</button>
+      <button id="disabledKeepBtn">Keep disabled</button>
+      <button class="primary" id="disabledEnableBtn">Enable</button>
+    </div>
+  </div>
+</div>
+
+<div id="confirmOverlay" class="overlay" style="display:none">
+  <div class="card confirm-card">
+    <h2 id="confirmTitle">Update</h2>
+    <div class="kv" id="confirmBody"></div>
+    <div class="inline" style="justify-content:flex-end;margin-top:14px">
+      <button id="confirmCancelBtn">Cancel</button>
+      <button class="primary" id="confirmUpdateBtn">Update</button>
+    </div>
+  </div>
+</div>
+
+<!-- The FOMOD screen (web/public/fomod-picker.js): options on the left, the hovered option's image and description on the
+     right. A fixed size (like Vortex's own window), so it never resizes from one option to the next; each column scrolls
+     on its own. Shown by adding the "open" class. -->
+<div class="fp-backdrop" id="fomodPickerModal">
+  <div class="fp-modal">
+    <div class="fp-head">
+      <button class="fp-close" id="fomodPickerClose" aria-label="Close">&times;</button>
+      <div class="fp-title" id="fomodPickerTitle">FOMOD install options</div>
+      <p class="fp-step" id="fomodPickerStepName"></p>
+    </div>
+    <div class="fp-body">
+      <div class="fp-options" id="fomodPickerOptions"></div>
+      <div class="fp-preview" id="fomodPickerPreview">
+        <div class="fp-preview-empty">Hover over an option to see its image and description.</div>
+      </div>
+    </div>
+    <p id="fomodPickerError" class="callout callout--warning hidden" style="margin:0 24px 12px"></p>
+    <div class="fp-foot">
+      <div class="fp-progress"><div class="fp-progress-fill" id="fomodPickerProgressFill"></div></div>
+      <button id="fomodPickerBack">Back</button>
+      <button class="btn-muted" id="fomodPickerSkip" style="display:none">Skip this one</button>
+      <button id="fomodPickerCancel">Cancel</button>
+      <button class="primary" id="fomodPickerNext">Next</button>
+    </div>
+  </div>
+</div>
+<!-- Click-to-zoom for a preview image; sits above the screen. -->
+<div class="fp-zoom" id="fomodZoomOverlay"><img id="fomodZoomImage" src="" alt=""></div>
+
+<script src="more-from-me.js"></script>
+<script src="row-state.js"></script>
+<script src="plural.js"></script>
+<script src="old-download-note.js"></script>
+<script src="update-follow.js"></script>
+<script src="start-vortex.js"></script>
+<script src="nexus-key-check.js"></script>
+<script src="setup-flow.js"></script>
+<script src="setup.js"></script>
+<script src="fomod-picker.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

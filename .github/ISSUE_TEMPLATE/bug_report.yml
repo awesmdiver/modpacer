@@ -1,0 +1,110 @@
+name: Something's not working
+description: Report a bug or something that isn't behaving right
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping make ModPacer better! Bugs happen, and a few quick details (especially the log file) usually let us find and fix them fast.
+
+        **Quick tip:** have a quick look through [open and closed issues](https://github.com/awesmdiver/modpacer/issues?q=is%3Aissue) first. If someone already reported it, add your thumbs-up or extra details there instead of starting from scratch.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where did it go wrong?
+      options:
+        - Checking for updates
+        - Update or Update all
+        - Install or Install all (Mods not installed)
+        - A mod's options screen (FOMOD)
+        - Deploy
+        - Vortex Bridge (the Vortex extension)
+        - Mod Organizer 2 downloads
+        - First-run setup
+        - Settings
+        - Help tab
+        - The tray icon or starting ModPacer
+        - Something else / Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: ModPacer version
+      description: It's shown next to the name at the top of the page.
+      placeholder: e.g. 1.0.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: manager
+    attributes:
+      label: Which mod manager do you use?
+      options:
+        - Vortex
+        - Mod Organizer 2
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Tell us what went wrong in your own words.
+      placeholder: e.g. "I clicked Update on SeverActions and the row stayed on 'Installing in Vortex…' for ten minutes."
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: What did you click or do leading up to it? If it only happens with one mod, tell us which.
+      placeholder: |
+        1. Opened ModPacer
+        2. Clicked Update all
+        3. Chose the options for a FOMOD mod
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: false
+
+  - type: textarea
+    id: log
+    attributes:
+      label: Log or error message (if you have one)
+      description: |
+        This is often the single most helpful thing. ModPacer keeps its logs in the `logs` folder inside the ModPacer folder (the one you unzipped): `update.log` and `helper.log`. Paste the last part here, or drag the file into this box.
+
+        Screenshots of errors or stuck screens help too. **Please don't post `config.json`**: it holds your settings, including a Nexus key if you added one.
+      render: text
+
+  - type: input
+    id: vortex-version
+    attributes:
+      label: Vortex version (Vortex users)
+      description: Found in Vortex under Settings, then About.
+      placeholder: e.g. 1.13.6
+
+  - type: input
+    id: bridge-version
+    attributes:
+      label: Vortex Bridge version (Vortex users)
+      description: Found in Vortex under Extensions, next to Vortex Bridge.
+      placeholder: e.g. 0.24.0
+
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Before submitting
+      options:
+        - label: I checked existing issues to see if this was already reported.
+          required: false
