@@ -765,8 +765,9 @@ function renderSkyrimNetNotFound(search) {
     const more = (search.places || []).length > 8 ? `<li>and ${(search.places || []).length - 8} more</li>` : '';
     box.innerHTML = `&#9888;&#65039; ModPacer couldn't find SkyrimNet.`
         + `<div>The folder you gave it: <code>${escapeHtml(search.given || '')}</code></div>`
+        + (search.chosenProblem ? `<div>&#9888;&#65039; The SkyrimNet folder you chose, <code>${escapeHtml(search.chosenProblem.folder)}</code>, isn't SkyrimNet's: ${escapeHtml(search.chosenProblem.why)}.</div>` : '')
         + `<div>It looked in:</div><ul>${list}${more}</ul>`
-        + `<div>It needs a folder named <code>SkyrimNet</code> with a <code>config</code> folder inside.</div>`
+        + `<div>It needs a folder named <code>SkyrimNet</code> with a <code>config</code> folder inside, and either <code>content-registry.json</code> or <code>config\\SkyrimNet.yaml</code>.</div>`
         + `<div><button data-action="pick-skyrimnet">Choose the SkyrimNet folder&hellip;</button></div>`;
     box.style.display = 'block';
 }

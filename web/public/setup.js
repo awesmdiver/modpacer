@@ -22,7 +22,7 @@ const setupUi = (function () {
         const text = (holder.textContent || '').trim();
         if (!text || reported.has(text)) return;
         reported.add(text);
-        fetch('/api/log-shown', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) }).catch(() => {});
+        modpacerFetch('/api/log-shown', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) }).catch(() => {});
     }
     const dot = (kind, text, extra) => (reportShown(kind, text), `<div class="su-status${extra ? ' ' + extra : ''}"><span class="su-dot ${kind}"></span><span>${text}</span></div>`);
     const pathBox = (p) => (p ? `<div class="su-path" title="${escapeHtml(p)}">${escapeHtml(p)}</div>` : '<div class="su-path empty">No folder chosen yet</div>');
