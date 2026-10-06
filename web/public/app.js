@@ -2,8 +2,15 @@
 
 function $(id) { return document.getElementById(id); }
 
+// The one place every call to ModPacer's server goes through. X-ModPacer is what tells the server the call came from this page
+// (another website cannot send a custom header without a permission check ModPacer never grants).
+function modpacerFetch(url, opts) {
+    const o = opts || {};
+    return fetch(url, { ...o, headers: { ...(o.headers || {}), 'X-ModPacer': '1' } });
+}
+
 async function api(method, url, body) {
-    const res = await fetch(url, {
+    const res = await modpacerFetch(url, {
         method, headers: body ? { 'Content-Type': 'application/json' } : undefined,
         body: body ? JSON.stringify(body) : undefined,
     });
@@ -895,7 +902,7 @@ $('openDownloadFolderBtn').addEventListener('click', async () => {
 // the link. The server ignores a second click on the same mod within 10 seconds, and does nothing when the Settings switch is off.
 function sendVisit(id) {
     if (!id) return;
-    try { fetch(`/api/plugins/${encodeURIComponent(id)}/visit`, { method: 'POST', keepalive: true }).catch(() => {}); } catch { /* the link still opens */ }
+    try { modpacerFetch(`/api/plugins/${encodeURIComponent(id)}/visit`, { method: 'POST', keepalive: true }).catch(() => {}); } catch { /* the link still opens */ }
 }
 document.addEventListener('click', (e) => {
     const a = e.target.closest ? e.target.closest('a[data-visit-id]') : null;
@@ -1452,7 +1459,7 @@ let wizardNeed = null;
 
 function releaseFomodImages(id, need) {
     if (!need || !need.imageCacheToken) return;
-    fetch('/api/fomod-image-cleanup', {
+    modpacerFetch('/api/fomod-image-cleanup', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ modId: id, imageCacheToken: need.imageCacheToken }),
     }).catch(() => {});

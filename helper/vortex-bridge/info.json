@@ -1,7 +1,7 @@
 {
   "name": "Vortex Bridge",
   "author": "awesmdiver",
-  "version": "0.25.0",
+  "version": "0.25.1",
   "description": "Exposes Vortex's live in-memory state over a local port for Vortex Collection Tools -- no more waiting on state.v2's WAL to catch up.",
   "gameId": "skyrimse",
   "url": "",

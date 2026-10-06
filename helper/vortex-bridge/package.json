@@ -1,6 +1,6 @@
 {
   "name": "vortex-bridge",
-  "version": "0.25.0",
+  "version": "0.25.1",
   "description": "Vortex Bridge: local companion extension for Vortex Collection Tools and ModPacer -- exposes Vortex's own live in-memory state over a local port, so external tools can read current rules directly instead of racing state.v2's WAL.",
   "main": "index.js",
   "author": "awesmdiver",

@@ -1,5 +1,7 @@
 ![License](https://img.shields.io/badge/License-MIT-yellow.svg) ![Platform](https://img.shields.io/badge/Platform-Windows-blue.svg)
 
+This extension is MIT-licensed on its own; it is bundled with ModPacer (GPL-3.0) and Vortex Collection Tools, and the badge above is not the licence of those tools.
+
 # Vortex Bridge
 
 > **A small Vortex extension that lets Vortex Collection Tools read your current rules live — no more waiting for Vortex to finish saving, no more closing Vortex first.**

@@ -197,6 +197,7 @@ static class Launcher
                 var req = (HttpWebRequest)WebRequest.Create(url + "api/check");
                 req.Method = "POST";
                 req.ContentType = "application/json";
+                req.Headers.Add("X-ModPacer", "1"); // tells the server this call is ours, not another website's
                 req.Timeout = 120000;
                 byte[] body = Encoding.UTF8.GetBytes("{}");
                 req.ContentLength = body.Length;

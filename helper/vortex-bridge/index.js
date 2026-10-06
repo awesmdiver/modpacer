@@ -1462,6 +1462,32 @@ function getVortexPaths(api) {
     };
 }
 
+// Keeps web pages out. The only callers are Node programs (no Origin, JSON bodies, Host 127.0.0.1);
+// a browser page always adds an Origin on cross-site calls, can send text/plain without a preflight,
+// and a DNS-rebinding page arrives with a foreign Host. Returns null to let the request through.
+function checkRequestGuard(req) {
+    const h = req.headers || {};
+    const host = String(h.host || '').toLowerCase();
+    if (host !== `127.0.0.1:${PORT}` && host !== `localhost:${PORT}`) {
+        return { status: 403, reason: 'foreign Host', error: 'Refused: the Bridge only answers requests addressed to 127.0.0.1 or localhost.' };
+    }
+    if (req.method === 'OPTIONS') {
+        return { status: 403, reason: 'OPTIONS', error: 'Refused: the Bridge does not answer browser preflight requests.' };
+    }
+    if (h.origin !== undefined) {
+        return { status: 403, reason: 'Origin header present', error: 'Refused: the Bridge does not take requests from web pages.' };
+    }
+    const site = h['sec-fetch-site'];
+    if (site !== undefined && site !== 'none') {
+        return { status: 403, reason: 'Sec-Fetch-Site ' + site, error: 'Refused: the Bridge does not take requests from web pages.' };
+    }
+    const hasBody = h['transfer-encoding'] !== undefined || (h['content-length'] !== undefined && Number(h['content-length']) > 0);
+    if (hasBody && !/^application\/json\s*(;|$)/i.test(String(h['content-type'] || ''))) {
+        return { status: 415, reason: 'body is not application/json', error: 'Refused: a request body must be sent as Content-Type: application/json.' };
+    }
+    return null;
+}
+
 function readJsonBody(req) {
     return new Promise((resolve, reject) => {
         let raw = '';
@@ -1485,9 +1511,16 @@ function startServer(api) {
     if (server) return; // already running (e.g. extension re-init) -- don't double-bind
 
     server = http.createServer((req, res) => {
-        // Localhost-only by construction (bound to 127.0.0.1 below, never 0.0.0.0) -- this is a
-        // local IPC channel between two processes on the same machine, not a network service.
-        res.setHeader('Access-Control-Allow-Origin', '*'); // convenience for local dev tools only
+        // Localhost-only by construction (bound to 127.0.0.1 below, never 0.0.0.0), and locked against
+        // web pages: no CORS headers, exact Host, no Origin, JSON bodies only. Runs before any routing.
+        const refusal = checkRequestGuard(req);
+        if (refusal) {
+            log('warn', `[vortex-bridge] refused ${req.method} ${String(req.url).split('?')[0]}: ${refusal.reason}`);
+            res.writeHead(refusal.status, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: refusal.error }));
+            req.resume();
+            return;
+        }
 
         if (req.method === 'GET' && req.url === '/health') {
             res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -2183,7 +2216,7 @@ main.__testables = {
     readModPacerInfo, getModPacerAddress, resolveModPacerExe, pingModPacer, ensureModPacerRunning, openModPacerOnDemand,
     openNotificationUrl, MODPACER_START_FAILED_MESSAGE, MODPACER_NOT_RUN_YET_NOTE,
     checkModPacerExePath, MODPACER_SETTINGS_DESCRIPTION, MODPACER_NOT_A_PROGRAM_WARNING,
-    startServer, stopServer, PORT,
+    startServer, stopServer, PORT, checkRequestGuard,
     COMPANIONS, OLD_COPY_MESSAGE, OLD_EXTENSION_ID, notifyOldCopyInstalled, oldCopyFolderExists,
     resetOldCopyNotice: () => { oldCopyNoticeShown = false; },
     _resolveInstallPath, _resolveDownloadPath, _formatPathTemplate, removeDownloadAndFile,

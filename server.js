@@ -52,6 +52,7 @@ const LISTEN_HOST = '127.0.0.1';
 
 function buildApp() {
     const app = express();
+    app.use(require('./lib/local-guard').localGuard(logUpdate)); // first of all: only ModPacer's own page may talk to this server
     app.use(express.json());
     app.use(express.static(path.join(__dirname, 'web', 'public')));
 
