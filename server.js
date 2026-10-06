@@ -11,7 +11,8 @@ const checkLock = require('./lib/check-lock');
 const { detectSkyrimInstallPath } = require('./lib/skyrim-detect');
 const firstRunSetup = require('./lib/first-run-setup');
 const helperBundle = require('./lib/helper-bundle');
-const { logUpdate } = require('./lib/update-log');
+const { logUpdate, logArea, logAreaOnce, noteSecret, logFile } = require('./lib/update-log');
+const os = require('os');
 const { pickFolderAsync } = require('./lib/vortex-sync/win-dialog');
 const nexus = require('./lib/nexus');
 const { openDownloadFolder } = require('./lib/open-download-folder');
@@ -19,6 +20,7 @@ const { readTheme } = require('./lib/skyrimnet-theme');
 const { writeInstallPointer } = require('./lib/helper-pointer');
 const vortexHelperClient = require('./lib/vortex-helper-client');
 const modManager = require('./lib/mod-manager');
+const mo2Instance = require('./lib/mo2-instance');
 const { APP_VERSION } = require('./lib/app-version');
 const vortexUpdate = require('./lib/vortex-update');
 const vortexLaunch = require('./lib/vortex-launch');
@@ -44,15 +46,38 @@ function settingsPayload(cfg) {
         helperDownloadUrl: modManager.HELPER_DOWNLOAD_URL,
         helperBundled: helperBundle.isBundled(),
         setup: firstRunSetup.setupSummary(cfg),
+        // MO2 only: a plain-words problem with the MO2 folder the player picked (nothing usable in it), else null.
+        mo2Problem: manager === 'mo2' && cfg.mo2Folder ? mo2Instance.resolveInstance(cfg.mo2Folder).problem : null,
     };
 }
+
+// Security round two, S3: what the page may load and do. No inline script anywhere (every script is one of ModPacer's own files), so
+// scripts are 'self' only. The page and its scripts write style="..." attributes in many places: that is the one narrow allowance
+// (style attributes only, never a style block or a script). Nothing loads from another site, and nothing may frame the page.
+const PAGE_CSP = [
+    "default-src 'none'", "script-src 'self'", "style-src 'self'", "style-src-attr 'unsafe-inline'", "img-src 'self' data:",
+    "connect-src 'self'", "base-uri 'none'", "form-action 'none'", "frame-ancestors 'none'",
+].join('; ');
+function pageSecurityHeaders(req, res, next) {
+    res.setHeader('Content-Security-Policy', PAGE_CSP);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    res.setHeader('X-Frame-Options', 'DENY');
+    next();
+}
+
+const FOMOD_IMAGE_EXT_RE = /\.(png|jpe?g|gif|bmp|webp)$/i;
+const REQUEST_ERROR_MESSAGE = "ModPacer couldn't read that request.";
+const SERVER_ERROR_MESSAGE = 'Something went wrong inside ModPacer. Try again.';
 
 const bridgeStatus = require('./lib/bridge-status');
 const LISTEN_HOST = '127.0.0.1';
 
 function buildApp() {
     const app = express();
+    app.disable('x-powered-by');
     app.use(require('./lib/local-guard').localGuard(logUpdate)); // first of all: only ModPacer's own page may talk to this server
+    app.use(pageSecurityHeaders);
     app.use(express.json());
     app.use(express.static(path.join(__dirname, 'web', 'public')));
 
@@ -183,6 +208,26 @@ function buildApp() {
         }
     });
 
+    // "Open log folder": Explorer on the folder that holds update.log. Always exactly that folder, never a path from the page.
+    app.post('/api/open-log-folder', (req, res) => {
+        try {
+            const dir = path.dirname(logFile());
+            fs.mkdirSync(dir, { recursive: true });
+            openDownloadFolder(dir);
+            res.json({ ok: true });
+        } catch (e) {
+            res.status(400).json({ error: e.message });
+        }
+    });
+
+    // The setup pop-up tells the log every error or warning it shows, word for word (the page makes some of them itself). Plain
+    // text only, one line, short; it goes through the same secret-removal as every other line.
+    app.post('/api/log-shown', (req, res) => {
+        const text = req.body && typeof req.body.text === 'string' ? req.body.text.replace(/[\r\n\t]+/g, ' ').trim().slice(0, 400) : '';
+        if (text) logArea('setup', `shown to the player: ${text}`);
+        res.json({ ok: true });
+    });
+
     app.post('/api/plugins/:id/update', async (req, res) => {
         const { row, result } = await engine.updatePlugin(req.params.id);
         if (!row) return res.status(404).json({ error: 'Unknown mod id, or not downloaded yet.' });
@@ -239,7 +284,7 @@ function buildApp() {
         const { modId, imagePath } = req.query || {};
         if (!modId || !imagePath) return res.status(400).end();
         const resolved = fomodPickerData.serveFomodImage(String(modId), String(imagePath));
-        if (!resolved) return res.status(404).end();
+        if (!resolved || !FOMOD_IMAGE_EXT_RE.test(resolved)) return res.status(404).end(); // pictures only, whatever the archive named
         res.sendFile(resolved);
     });
 
@@ -254,7 +299,8 @@ function buildApp() {
     });
 
     app.get('/api/theme', (req, res) => {
-        res.json(readTheme(appConfig.loadConfig().skyrimInstallPath));
+        const cfg = appConfig.loadConfig();
+        res.json(readTheme(cfg.skyrimInstallPath, { skyrimNetFolder: cfg.skyrimNetFolder, modsFolder: cfg.vortexStagingFolder, mo2Folder: modManager.isMo2(cfg) ? cfg.mo2Folder : null }));
     });
 
     app.get('/api/settings', async (req, res) => {
@@ -280,8 +326,27 @@ function buildApp() {
         if ('modManager' in patch) {
             return res.status(400).json({ error: MOD_MANAGER_LOCKED });
         }
+        if (typeof patch.nexusApiKey === 'string') noteSecret(patch.nexusApiKey); // so the log can never carry it, even by accident
+        const checked = appConfig.validateSettingsPatch(req.body === undefined ? {} : req.body); // only the settings the page really has, each with the right kind of value
+        if (!checked.ok) {
+            logArea('settings', `not saved (valid: no): ${checked.error}; names: ${Object.keys(patch).join(', ') || '(none)'}`);
+            return res.status(400).json({ error: checked.error });
+        }
         // The key is write-only from the browser's own point of view -- never echoed back.
-        const next = appConfig.saveConfig(patch);
+        // MO2: one folder is enough -- fill what is not set from ModOrganizer.ini (read only), and turn a program or base
+        // folder given as the staging or Skyrim folder into the real folder.
+        const toSave = { ...checked.patch };
+        if (modManager.isMo2(appConfig.loadConfig())) Object.assign(toSave, mo2Instance.derivePatch(appConfig.loadConfig(), toSave));
+        // The switch's own two lines: "turned off" is written BEFORE it stops (so a later report shows why the log is quiet), "turned on" after it starts.
+        const wasKeeping = appConfig.loadConfig().keepLog !== false;
+        if ('keepLog' in toSave && wasKeeping && toSave.keepLog === false) logArea('settings', 'logging turned off');
+        const next = appConfig.saveConfig(toSave);
+        if ('keepLog' in toSave && !wasKeeping && toSave.keepLog !== false) logArea('settings', 'logging turned on');
+        logArea('settings', `saved (valid: yes): ${describeSettingsChange(toSave)}`);
+        if (modManager.isMo2(next) && 'mo2Folder' in toSave && next.mo2Folder) {
+            const problem = mo2Instance.resolveInstance(next.mo2Folder).problem;
+            logArea('setup', `MO2 folder: ${problem ? `no settings file read (${problem})` : 'read ok'}`);
+        }
         res.json(settingsPayload(next));
         // Saving a download folder (or turning auto-download on) starts whatever's ALREADY known
         // to be pending from the last check immediately -- same real downloads a check would start,
@@ -292,6 +357,16 @@ function buildApp() {
             engine.maybeAutoDownloadNow().catch(() => {});
         }
     });
+
+    // What a settings save changed, for the log: the names, the folders and switches by value, and for the Nexus key only whether
+    // it was set or cleared. Never the key itself.
+    function describeSettingsChange(patch) {
+        return Object.keys(patch).map((name) => {
+            if (name === 'nexusApiKey') return patch[name] ? 'nexusApiKey (set)' : 'nexusApiKey (cleared)';
+            const v = patch[name];
+            return `${name}=${typeof v === 'string' ? (v || '(empty)') : JSON.stringify(v)}`;
+        }).join(', ') || '(nothing)';
+    }
 
     app.post('/api/settings/browse-folder', async (req, res) => {
         try {
@@ -314,7 +389,8 @@ function buildApp() {
         const choice = req.body && req.body.modManager;
         if (choice !== 'vortex' && choice !== 'mo2') return res.status(400).json({ error: 'Pick Vortex or Mod Organizer 2.' });
         const current = modManager.getModManager(appConfig.loadConfig());
-        if (current && current !== choice) return res.status(409).json({ error: MOD_MANAGER_LOCKED });
+        if (current && current !== choice) { logArea('setup', `mod manager: kept ${current} (a change to ${choice} was refused)`); return res.status(409).json({ error: MOD_MANAGER_LOCKED }); }
+        logArea('setup', `mod manager: ${choice}`);
         res.json(settingsPayload(appConfig.saveConfig({ modManager: choice })));
     });
 
@@ -322,36 +398,51 @@ function buildApp() {
     app.get('/api/setup/skyrim', (req, res) => {
         const saved = appConfig.loadConfig().skyrimInstallPath;
         const found = saved || detectSkyrimInstallPath();
-        res.json({ path: found || null, state: firstRunSetup.skyrimState(found), detected: !saved && !!found });
+        const skyrimState = firstRunSetup.skyrimState(found);
+        logAreaOnce('setup-skyrim', 'setup', `Skyrim folder: ${found ? `${skyrimState} (${saved ? 'saved' : 'detected'}) ${found}` : 'not found'}`);
+        res.json({ path: found || null, state: skyrimState, detected: !saved && !!found });
     });
     app.post('/api/setup/skyrim-check', (req, res) => {
         const p = req.body && req.body.path;
-        res.json({ state: firstRunSetup.skyrimState(p) });
+        const skyrimState = firstRunSetup.skyrimState(p);
+        logArea('setup', `Skyrim folder checked: ${skyrimState}${typeof p === 'string' && p ? ' ' + p : ''}`);
+        res.json({ state: skyrimState });
     });
 
     // Step 3: can this folder be used? kind = 'downloads' | 'mods'. problem: null | 'empty' | 'missing' | 'skyrim-folder' | 'data-folder'.
     app.post('/api/setup/folder-check', (req, res) => {
         const body = req.body || {};
         const skyrim = appConfig.loadConfig().skyrimInstallPath;
-        res.json({ problem: firstRunSetup.folderProblem(body.path, body.kind === 'mods' ? 'mods' : 'downloads', skyrim) });
+        const kind = body.kind === 'mods' ? 'mods' : 'downloads';
+        const problem = firstRunSetup.folderProblem(body.path, kind, skyrim);
+        const word = problem === 'missing' ? 'missing' : problem ? `not usable (${problem})` : 'exists';
+        logArea('setup', `${kind === 'mods' ? 'Mods' : 'Downloads'} folder: ${word}${typeof body.path === 'string' && body.path ? ' ' + body.path : ''}`);
+        res.json({ problem });
     });
 
-    // Step 3 (Vortex): the downloads and staging folders, read from Vortex through the Helper (its /paths answer). read =
-    // false when Vortex/the Helper can't be asked right now (Vortex closed, an older Helper) -- the page then shows empty
-    // fields. Only the current game's folders count: anything but Skyrim SE is ignored.
+    // Step 4 (Vortex; the Bridge step comes first): the downloads and staging folders, read from Vortex through the Bridge (its /paths
+    // answer). The page asks again every few seconds while a box is empty. read = false when Vortex/the Bridge can't be asked right now
+    // (Vortex closed, no Bridge, an older Bridge) -- the page then shows empty fields, with `reason` choosing the one plain line:
+    // 'vortex-closed' (Vortex is not running) | 'no-bridge' (Vortex is open but the Bridge does not answer). Only the current game's
+    // folders count (anything but Skyrim SE is ignored), and only a folder that really exists is handed back.
     app.get('/api/setup/vortex-folders', async (req, res) => {
-        if (modManager.getModManager() !== 'vortex') return res.json({ read: false, downloadFolder: null, stagingFolder: null });
+        if (modManager.getModManager() !== 'vortex') return res.json({ read: false, reason: null, downloadFolder: null, stagingFolder: null });
         const paths = await vortexHelperClient.getPaths();
         const usable = paths && (!paths.gameId || paths.gameId === 'skyrimse');
-        const downloadFolder = usable && typeof paths.downloadFolder === 'string' ? paths.downloadFolder : null;
-        const stagingFolder = usable && typeof paths.stagingFolder === 'string' ? paths.stagingFolder : null;
-        res.json({ read: !!(downloadFolder || stagingFolder), downloadFolder, stagingFolder });
+        const existing = (p) => (typeof p === 'string' && p && firstRunSetup.folderProblem(p, 'downloads', null) === null ? p : null);
+        const downloadFolder = usable ? existing(paths.downloadFolder) : null;
+        const stagingFolder = usable ? existing(paths.stagingFolder) : null;
+        const read = !!(downloadFolder || stagingFolder);
+        const reason = read ? null : (vortexHelperClient.isVortexRunning() === false ? 'vortex-closed' : 'no-bridge');
+        logAreaOnce('setup-vortex-folders', 'setup', `Vortex folders: ${read ? 'read from Vortex' : `not read (${reason === 'vortex-closed' ? 'Vortex closed' : 'no Bridge answering, an older Bridge, or another game'})`}`);
+        res.json({ read, reason, downloadFolder, stagingFolder });
     });
 
     // Step 5 (Vortex): what the updater can see of the Helper right now -- the same checks the rest of the app uses.
     app.get('/api/setup/helper-status', async (req, res) => {
         // One shared answer (lib/bridge-status.js): asks the Bridge itself first; the folder on disk is only the fallback.
         const bridge = await bridgeStatus.get(() => vortexUpdate.getHelperConnectionState());
+        logAreaOnce('setup-bridge', 'setup', `Vortex Bridge: installed=${!!bridge.installed}, state=${bridge.connectionState || 'unknown'}`);
         res.json({
             ...bridge,
             answering: bridge.connectionState === 'connected' || bridge.answering, // a Bridge that answers /health is there (busy or not)
@@ -373,6 +464,7 @@ function buildApp() {
     app.post('/api/setup/step', (req, res) => {
         const step = req.body && req.body.step;
         const value = Number.isInteger(step) && step >= 1 && step <= 6 ? step : null;
+        logArea('setup', value ? `reached step ${value}` : 'setup finished');
         res.json(settingsPayload(appConfig.saveConfig({ setupStep: value })));
     });
 
@@ -381,18 +473,40 @@ function buildApp() {
     app.post('/api/settings/check-nexus-key', async (req, res) => {
         const key = (req.body && req.body.key) || appConfig.loadConfig().nexusApiKey;
         if (!key) return res.status(400).json({ error: 'No key to check.', kind: 'empty' });
+        noteSecret(key);
         try {
             const result = await nexus.checkApiKey(key);
+            logArea('setup', `Nexus key check: accepted (Premium: ${result.isPremium ? 'yes' : 'no'})`);
             res.json({ ok: true, isPremium: !!result.isPremium });
         } catch (e) {
             const code = e && e.statusCode;
+            logArea('setup', `Nexus key check: ${code === 401 || code === 403 ? 'not accepted' : code === 429 ? 'Nexus busy' : 'could not reach Nexus'}`);
             if (code === 401 || code === 403) return res.status(401).json({ error: "Nexus didn't accept that key.", kind: 'rejected' });
             if (code === 429) return res.status(429).json({ error: 'Nexus is busy. Try again in a minute.', kind: 'busy' });
             res.status(502).json({ error: "Couldn't reach Nexus. Check your internet and try again.", kind: 'unreachable' });
         }
     });
 
+    // Last of all (security round two, S4): any error that reaches here gets a short plain answer, never Express's page with the
+    // stack and this PC's folders. The detail goes to logs/update.log only.
+    app.use((err, req, res, next) => { // eslint-disable-line no-unused-vars
+        const status = err && Number.isInteger(err.status) && err.status >= 400 && err.status < 500 ? err.status : 500;
+        // A body that was not valid JSON: only that fact, never the parser's message (it can quote the body, keys included). Everything
+        // else keeps its stack; update-log removes any secret from it on the way in.
+        const detail = err && err.type === 'entity.parse.failed' ? 'the request body was not valid JSON' : (err && err.stack ? err.stack : err);
+        try { logArea('error', `error on ${req.method} ${String(req.url).split('?')[0]}: ${detail}`); } catch { /* the log is never a reason to fail */ }
+        if (res.headersSent) return;
+        res.status(status).json({ error: status === 500 ? SERVER_ERROR_MESSAGE : REQUEST_ERROR_MESSAGE });
+    });
+
     return app;
+}
+
+// The first lines of every run: versions and where the data lives. Never a key, never a path outside this app's own data folder choice.
+function logStart(mode, port) {
+    try {
+        logArea('start', `ModPacer ${APP_VERSION} (${mode}); Node ${process.versions.node}; Windows ${os.release()} (${os.arch()}); data folder: ${process.env.MODPACER_DATA_DIR ? 'moved' : 'default'}; mod manager: ${modManager.getModManager() || 'not chosen yet'}${port ? `; port ${port}` : ''}`);
+    } catch { /* the log is never a reason to fail */ }
 }
 
 // Best-effort: ask the Vortex Bridge to show one notification listing what's new. The
@@ -563,6 +677,7 @@ if (require.main === module) {
     // comment for why this always happens up front, before branching into either mode below.
     writeInstallPointer(__dirname, PORT);
     if (process.argv.includes('--check')) {
+        logStart('background check');
         printStartupNotice();
         runHeadlessCheck().catch((e) => {
             recordCheckResult('failed', e && e.message ? e.message : String(e));
@@ -570,6 +685,7 @@ if (require.main === module) {
             process.exitCode = 1;
         }).then(() => process.exit(process.exitCode || 0));
     } else {
+        logStart('window', PORT);
         engine.startFresh(); // start fresh: forget unfinished-update bookkeeping; start-up only reads, never cleans up or retries
         const app = buildApp();
         vortexUpdate.setConnectionListener(createVortexConsoleNotes());
@@ -585,6 +701,7 @@ if (require.main === module) {
             openBrowser(`http://127.0.0.1:${PORT}/`);
         });
         server.on('error', async (err) => {
+            logArea('error', `the server could not start: ${err.code || err.message}`);
             if (err.code !== 'EADDRINUSE') {
                 console.error(err.message);
                 process.exitCode = 1;
@@ -605,4 +722,4 @@ if (require.main === module) {
     }
 }
 
-module.exports = { LISTEN_HOST, buildApp, waitForVortexReady, runHeadlessCheck, settingsPayload, startupNoticeLine, notifyHelperBestEffort, updateRowsToReport, updateNotificationMessage, pingExistingServer, describePortConflict };
+module.exports = { logStart, LISTEN_HOST, buildApp, waitForVortexReady, runHeadlessCheck, settingsPayload, startupNoticeLine, notifyHelperBestEffort, updateRowsToReport, updateNotificationMessage, pingExistingServer, describePortConflict };

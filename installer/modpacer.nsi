@@ -20,9 +20,16 @@
 ;
 ; UNINSTALLING: removes the program, the shortcuts and the Start-with-Windows entry, then asks once whether to also delete the settings (default No).
 ;
+; THE OPTIONS ON AN UPDATE: the Options page opens with what is really there right now (the Start Menu shortcut, the desktop shortcut, the
+; Start-with-Windows entry), nothing remembered: a shortcut deleted by hand, or Start with Windows turned off from the tray menu, stays off. A first
+; install keeps the plain defaults. An update never undoes a choice: an entry is removed only when the person unticks its box on the Options page.
+; A silent run (/S) shows no page, so what is there is kept as it is.
+;
 ; TESTING WITHOUT TOUCHING THE PC: /TESTROOT="<scratch folder>" (with /S) installs into <scratch>\install and SKIPS every write outside that folder:
-; no Start Menu, no desktop, no registry, no Start-with-Windows entry. The uninstaller takes the same switch, plus /DELETESETTINGS to answer the
-; question with Yes. See tests/test-installer.js. (The real shortcuts and the Apps entry cannot be tried that way.)
+; no Start Menu, no desktop, no registry, no Start-with-Windows entry. /TESTREG="Software\ModPacerTest<anything>" (only with /TESTROOT, and only that
+; prefix is accepted) turns the shortcuts and the Start-with-Windows value on, but in a scratch place: shortcuts under
+; <scratch>\StartMenu and <scratch>\Desktop, registry values under that key. The uninstaller takes the same switches, plus /DELETESETTINGS to answer
+; the question with Yes. See tests/test-installer.js. (The Apps entry and the clickable pages cannot be tried that way.)
 
 Unicode true
 
@@ -34,6 +41,8 @@ Unicode true
 !define MP_NAME "ModPacer"
 !define MP_PUBLISHER "awesmdiver"
 !define MP_EXE "ModPacer.exe"
+; A small file the installer writes into the folder it installs to. Uninstall deletes settings ONLY where this file is (security round two, S6).
+!define MP_MARKER ".modpacer-install"
 !define MP_REGKEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\ModPacer"
 !define MP_RUNKEY "Software\Microsoft\Windows\CurrentVersion\Run"
 
@@ -60,6 +69,12 @@ VIAddVersionKey "LegalCopyright" "${MP_PUBLISHER}"
 !define MUI_ABORTWARNING
 
 Var TESTROOT
+Var TESTREG
+Var Entries     ; 1 = write/read the shortcuts and the Run value (a real run, or a test with /TESTREG)
+Var OptShown    ; 1 = the person saw the Options page (so an unticked box means "remove it")
+Var SmDir
+Var DeskDir
+Var RunKey
 Var OptStartMenu
 Var OptDesktop
 Var OptAutostart
@@ -100,20 +115,71 @@ Page custom OptionsPageCreate OptionsPageLeave
     Sleep 1500
 !macroend
 
-Function .onInit
+; Where the three things live: the real places, or (a test, /TESTREG) scratch ones. Same code for the installer and the uninstaller.
+!macro SetEntryPlaces
     ${GetParameters} $R0
     ${GetOptions} $R0 "/TESTROOT=" $TESTROOT
+    ClearErrors
+    StrCpy $SmDir "$SMPROGRAMS\${MP_NAME}"
+    StrCpy $DeskDir "$DESKTOP"
+    StrCpy $RunKey "${MP_RUNKEY}"
+    StrCpy $Entries 1
+    ${If} $TESTROOT != ""
+        StrCpy $Entries 0
+        ${GetOptions} $R0 "/TESTREG=" $TESTREG
+        ${IfNot} ${Errors}
+            StrCpy $0 $TESTREG 21
+            ${If} $0 == "Software\ModPacerTest"
+                StrCpy $Entries 1
+                StrCpy $SmDir "$TESTROOT\StartMenu\${MP_NAME}"
+                StrCpy $DeskDir "$TESTROOT\Desktop"
+                StrCpy $RunKey "$TESTREG\Run"
+            ${EndIf}
+        ${EndIf}
+        ClearErrors
+    ${EndIf}
+!macroend
+
+Function .onInit
+    !insertmacro SetEntryPlaces
     ${If} $TESTROOT != ""
         StrCpy $INSTDIR "$TESTROOT\install"
     ${EndIf}
+    StrCpy $OptShown 0
     StrCpy $OptStartMenu ${BST_CHECKED}
     StrCpy $OptDesktop ${BST_UNCHECKED}
     StrCpy $OptAutostart ${BST_UNCHECKED}
+    Call PrefillOptions
+FunctionEnd
+
+; An update (ModPacer is already in the folder the installer will use): each box starts from what is really there right now. Nothing remembered
+; is read. A first install keeps the defaults above.
+Function PrefillOptions
+    ${IfNot} ${FileExists} "$INSTDIR\${MP_EXE}"
+        Return
+    ${EndIf}
+    ${If} $Entries != 1
+        Return
+    ${EndIf}
+    StrCpy $OptStartMenu ${BST_UNCHECKED}
+    ${If} ${FileExists} "$SmDir\${MP_NAME}.lnk"
+        StrCpy $OptStartMenu ${BST_CHECKED}
+    ${EndIf}
+    StrCpy $OptDesktop ${BST_UNCHECKED}
+    ${If} ${FileExists} "$DeskDir\${MP_NAME}.lnk"
+        StrCpy $OptDesktop ${BST_CHECKED}
+    ${EndIf}
+    StrCpy $OptAutostart ${BST_UNCHECKED}
+    ClearErrors
+    ReadRegStr $0 HKCU "$RunKey" "${MP_NAME}"
+    ${If} $0 != ""
+        StrCpy $OptAutostart ${BST_CHECKED}
+    ${EndIf}
+    ClearErrors
 FunctionEnd
 
 Function un.onInit
-    ${GetParameters} $R0
-    ${GetOptions} $R0 "/TESTROOT=" $TESTROOT
+    !insertmacro SetEntryPlaces
 FunctionEnd
 
 ; ---- page: what to expect ----
@@ -153,6 +219,7 @@ Function OptionsPageLeave
     ${NSD_GetState} $ChkStartMenu $OptStartMenu
     ${NSD_GetState} $ChkDesktop $OptDesktop
     ${NSD_GetState} $ChkAutostart $OptAutostart
+    StrCpy $OptShown 1
 FunctionEnd
 
 Function LaunchModPacer
@@ -161,6 +228,27 @@ Function LaunchModPacer
 FunctionEnd
 
 Section "Install"
+    ; A folder that already holds other things (Documents, say) and is not a ModPacer folder gets a ModPacer folder of its own inside it,
+    ; so ModPacer only ever lives in, and later deletes from, a folder that is its own.
+    StrCpy $2 ""
+    FindFirst $0 $1 "$INSTDIR\*.*"
+    findloop:
+        StrCmp $1 "" findend
+        StrCmp $1 "." findnext
+        StrCmp $1 ".." findnext
+        StrCpy $2 "used"
+        Goto findend
+    findnext:
+        FindNext $0 $1
+        Goto findloop
+    findend:
+    FindClose $0
+    ${If} $2 == "used"
+    ${AndIfNot} ${FileExists} "$INSTDIR\${MP_EXE}"
+    ${AndIfNot} ${FileExists} "$INSTDIR\${MP_MARKER}"
+        StrCpy $INSTDIR "$INSTDIR\${MP_NAME}"
+    ${EndIf}
+
     !insertmacro StopRunningApp
 
     SetOutPath "$INSTDIR"
@@ -175,19 +263,34 @@ Section "Install"
     File /r /x ".release-staging" "${MP_STAGE_DIR}\*"
 
     WriteUninstaller "$INSTDIR\Uninstall.exe"
+    FileOpen $0 "$INSTDIR\${MP_MARKER}" w
+    FileWrite $0 "ModPacer made this folder. Uninstall only deletes ModPacer's own files in it.$\r$\n"
+    FileClose $0
 
-    ${If} $TESTROOT == ""
+    ${If} $Entries == 1
+        ; A ticked box makes sure the entry is there. An unticked one removes it only when the person saw the page and unticked it: a silent
+        ; run, or an update that never asked, leaves whatever is there as it is.
         ${If} $OptStartMenu == ${BST_CHECKED}
-            CreateDirectory "$SMPROGRAMS\${MP_NAME}"
-            CreateShortcut "$SMPROGRAMS\${MP_NAME}\${MP_NAME}.lnk" "$INSTDIR\${MP_EXE}" "" "$INSTDIR\${MP_EXE}" 0
+            CreateDirectory "$SmDir"
+            CreateShortcut "$SmDir\${MP_NAME}.lnk" "$INSTDIR\${MP_EXE}" "" "$INSTDIR\${MP_EXE}" 0
+        ${ElseIf} $OptShown == 1
+            Delete "$SmDir\${MP_NAME}.lnk"
+            RMDir "$SmDir"
         ${EndIf}
         ${If} $OptDesktop == ${BST_CHECKED}
-            CreateShortcut "$DESKTOP\${MP_NAME}.lnk" "$INSTDIR\${MP_EXE}" "" "$INSTDIR\${MP_EXE}" 0
+            CreateDirectory "$DeskDir"
+            CreateShortcut "$DeskDir\${MP_NAME}.lnk" "$INSTDIR\${MP_EXE}" "" "$INSTDIR\${MP_EXE}" 0
+        ${ElseIf} $OptShown == 1
+            Delete "$DeskDir\${MP_NAME}.lnk"
         ${EndIf}
         ; The same switch as the tray menu's "Start with Windows" (the program's own Run entry, this person's only).
         ${If} $OptAutostart == ${BST_CHECKED}
-            WriteRegStr HKCU "${MP_RUNKEY}" "${MP_NAME}" `"$INSTDIR\${MP_EXE}"`
+            WriteRegStr HKCU "$RunKey" "${MP_NAME}" `"$INSTDIR\${MP_EXE}"`
+        ${ElseIf} $OptShown == 1
+            DeleteRegValue HKCU "$RunKey" "${MP_NAME}"
         ${EndIf}
+    ${EndIf}
+    ${If} $TESTROOT == ""
         ; Windows' Apps list. HKCU, matching the per-user install: no administrator, only this person's account.
         WriteRegStr HKCU "${MP_REGKEY}" "DisplayName" "${MP_NAME}"
         WriteRegStr HKCU "${MP_REGKEY}" "DisplayVersion" "${MP_VERSION}"
@@ -213,11 +316,13 @@ Section "Uninstall"
 
     !insertmacro StopRunningApp
 
+    ${If} $Entries == 1
+        Delete "$SmDir\${MP_NAME}.lnk"
+        RMDir "$SmDir"
+        Delete "$DeskDir\${MP_NAME}.lnk"
+        DeleteRegValue HKCU "$RunKey" "${MP_NAME}"
+    ${EndIf}
     ${If} $TESTROOT == ""
-        Delete "$SMPROGRAMS\${MP_NAME}\${MP_NAME}.lnk"
-        RMDir "$SMPROGRAMS\${MP_NAME}"
-        Delete "$DESKTOP\${MP_NAME}.lnk"
-        DeleteRegValue HKCU "${MP_RUNKEY}" "${MP_NAME}"
         DeleteRegKey HKCU "${MP_REGKEY}"
     ${EndIf}
 
@@ -253,8 +358,23 @@ Section "Uninstall"
     Delete "$INSTDIR\Uninstall.exe"
 
     ${If} $R1 == "yes"
-        RMDir /r "$INSTDIR"
-    ${Else}
-        RMDir "$INSTDIR" ; only succeeds when nothing of the settings is left in it
+        ${If} ${FileExists} "$INSTDIR\${MP_MARKER}"
+            ; Only ModPacer's own settings, by name: never the whole folder, so anything else in it is left alone.
+            Delete "$INSTDIR\config.json"
+            Delete "$INSTDIR\state.json"
+            Delete "$INSTDIR\vortex-info-cache.json"
+            Delete "$INSTDIR\check-last.txt"
+            Delete "$INSTDIR\check-running.json"
+            Delete "$INSTDIR\pending-deploy.json"
+            Delete "$INSTDIR\pending-old-copies.json"
+            Delete "$INSTDIR\install-info.json"
+            RMDir /r "$INSTDIR\cache"
+            RMDir /r "$INSTDIR\logs"
+            RMDir /r "$INSTDIR\pending-updates"
+            Delete "$INSTDIR\${MP_MARKER}"
+        ${Else}
+            MessageBox MB_ICONEXCLAMATION|MB_OK "Your ModPacer settings were not deleted, because ModPacer didn't create this folder:$\r$\n$INSTDIR" /SD IDOK
+        ${EndIf}
     ${EndIf}
+    RMDir "$INSTDIR" ; only succeeds when nothing is left in it
 SectionEnd

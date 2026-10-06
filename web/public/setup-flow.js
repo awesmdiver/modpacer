@@ -4,7 +4,7 @@
 // Loaded as a plain script in the browser (sets window.setupFlow) and as a module in Node.
 (function (root) {
     // Same lists as lib/first-run-setup.js (a test keeps the two equal). Not chosen yet counts as Vortex.
-    const VORTEX_KINDS = ['manager', 'skyrim', 'folders', 'options', 'helper', 'check'];
+    const VORTEX_KINDS = ['manager', 'skyrim', 'helper', 'folders', 'options', 'check'];
     const MO2_KINDS = ['manager', 'skyrim', 'folders', 'options', 'check'];
     const NAMES = { manager: 'Mod manager', skyrim: 'Skyrim', folders: 'Folders', options: 'Options', helper: 'Bridge', check: 'Check' };
 
@@ -106,7 +106,31 @@
         return '';
     }
 
-    const api = { stepKinds, stepNames, nextLabel, helperEntryPane, helperCheckPane, BRIDGE_MISSING, BRIDGE_OUTDATED, BRIDGE_UNREACHABLE, bridgeNewerText, bridgeStepsHtml, createRestartWatcher, summaryLine, completionText, countWaitingUpdates, unfinishedText, folderProblemText };
+    // Vortex's folders fill in by themselves once the Bridge answers (GET /api/setup/vortex-folders gives the reason it could not yet).
+    // One plain line while a box is still empty; nothing at all once they are found (no news is good news).
+    const FOLDERS_POLL_MS = 3000;
+    const FOLDERS_NOTE = {
+        'vortex-closed': 'Open Vortex and ModPacer fills these in. Or choose the folders yourself.',
+        'no-bridge': 'Add the Bridge first and ModPacer fills these in. Or choose the folders yourself.',
+    };
+    function foldersNote(reason, dlPath, modsPath) {
+        if (dlPath && modsPath) return '';
+        return FOLDERS_NOTE[reason] || FOLDERS_NOTE['vortex-closed'];
+    }
+    // What one answer from the Bridge changes: only an EMPTY box that the person has not chosen a folder for is ever filled; a folder
+    // the person typed, browsed to or already had saved is never replaced. `found` = { downloadFolder, stagingFolder } (folders that exist).
+    function foldersFill(state, found) {
+        const fill = {};
+        if (!state.dl.path && !state.touched.dl && found.downloadFolder) fill.dl = found.downloadFolder;
+        if (!state.mods.path && !state.touched.mods && found.stagingFolder) fill.mods = found.stagingFolder;
+        return fill;
+    }
+    // Keep asking while a box is empty and the person has not taken it over themselves.
+    function foldersPollWanted(state) {
+        return (!state.dl.path && !state.touched.dl) || (!state.mods.path && !state.touched.mods);
+    }
+
+    const api = { FOLDERS_POLL_MS, foldersNote, foldersFill, foldersPollWanted, stepKinds, stepNames, nextLabel, helperEntryPane, helperCheckPane, BRIDGE_MISSING, BRIDGE_OUTDATED, BRIDGE_UNREACHABLE, bridgeNewerText, bridgeStepsHtml, createRestartWatcher, summaryLine, completionText, countWaitingUpdates, unfinishedText, folderProblemText };
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
     else root.setupFlow = api;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -13,7 +13,18 @@ const setupUi = (function () {
     let S = null; // null = closed
     let timer = null;
 
-    const dot = (kind, text, extra) => `<div class="su-status${extra ? ' ' + extra : ''}"><span class="su-dot ${kind}"></span><span>${text}</span></div>`;
+    // Every error or warning the pop-up shows is also written to the log (word for word), once per distinct text.
+    const reported = new Set();
+    function reportShown(kind, html) {
+        if (kind !== 'err' && kind !== 'warn') return;
+        const holder = document.createElement('div');
+        holder.innerHTML = html;
+        const text = (holder.textContent || '').trim();
+        if (!text || reported.has(text)) return;
+        reported.add(text);
+        fetch('/api/log-shown', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) }).catch(() => {});
+    }
+    const dot = (kind, text, extra) => (reportShown(kind, text), `<div class="su-status${extra ? ' ' + extra : ''}"><span class="su-dot ${kind}"></span><span>${text}</span></div>`);
     const pathBox = (p) => (p ? `<div class="su-path" title="${escapeHtml(p)}">${escapeHtml(p)}</div>` : '<div class="su-path empty">No folder chosen yet</div>');
     const btn = (action, label, cls, disabled) => `<button${cls ? ` class="${cls}"` : ''} data-su="${action}"${disabled ? ' disabled' : ''}>${label}</button>`;
     const link = (action, label) => `<button class="su-link" data-su="${action}">${label}</button>`;
@@ -46,6 +57,10 @@ const setupUi = (function () {
         if (title) title.id = 'suTitle';
         const err = S.error ? dot('err', escapeHtml(S.error)) : '';
         if (err) $('suBody').querySelector('.su-nav') && $('suBody').querySelector('.su-nav').insertAdjacentHTML('beforebegin', err);
+        // Something went wrong on this step: say where the log is (once per step view).
+        if ($('suBody').querySelector('.su-dot.err') && $('suBody').querySelector('.su-nav')) {
+            $('suBody').querySelector('.su-nav').insertAdjacentHTML('beforebegin', `<div class="su-note">There is a log you can send us: ${link('open-log', 'Open log folder')}</div>`);
+        }
     }
 
     // ---- step 1: mod manager ----
@@ -86,17 +101,18 @@ const setupUi = (function () {
             ${problem}<div class="su-note">${noteHtml}</div>`;
     }
     function viewFolders() {
-        if (!S.foldersLoaded) return `<h2>Your folders</h2>${dot('info', 'One moment&hellip;')}${nav(back(), btn('next', flow.nextLabel(S.manager, 2), 'primary', true))}`;
+        if (!S.foldersLoaded) return `<h2>Your folders</h2>${dot('info', 'One moment&hellip;')}${nav(back(), btn('next', flow.nextLabel(S.manager, S.index), 'primary', true))}`;
         const ok = S.dl.path && S.mods.path && !S.dl.problem && !S.mods.problem;
-        const nextBtn = btn('next', flow.nextLabel(S.manager, 2), 'primary', !ok);
+        const nextBtn = btn('next', flow.nextLabel(S.manager, S.index), 'primary', !ok);
         if (S.manager === 'mo2') {
             return `<h2>Your folders</h2><p class="hint">Choose the two folders your MO2 Skyrim instance uses.</p>
                 ${folderField('Downloads folder (where updates save)', 'dl', 'Find this in MO2: Settings &rarr; Paths &rarr; Downloads')}
                 ${folderField('Mods folder (where MO2 keeps installed mods)', 'mods', 'Find this in MO2: Settings &rarr; Paths &rarr; Mods. (Don\'t use your Skyrim or Data folder here.)')}
                 ${nav(back(), nextBtn)}`;
         }
-        const hint = S.vortexRead ? 'We found these in Vortex. Only change them if they look wrong.' : 'We couldn\'t read these from Vortex. Find them in Vortex and choose them here.';
-        return `<h2>Your folders</h2><p class="hint">${hint}</p>
+        // One plain line, only while a box is still empty (the page keeps asking the Bridge and fills them in by itself); nothing once they are found.
+        const note = flow.foldersNote(S.vortexReason, S.dl.path, S.mods.path);
+        return `<h2>Your folders</h2>${note ? `<div class="su-note">${escapeHtml(note)}</div>` : ''}
             ${folderField('Downloads folder (where updates save)', 'dl', 'Find this in Vortex: Settings &rarr; Download &rarr; Download Folder')}
             ${folderField('Mod staging folder (where Vortex keeps installed mods)', 'mods', 'Find this in Vortex: Settings &rarr; Mods &rarr; Mod Staging Folder')}
             ${nav(back(), nextBtn)}`;
@@ -108,15 +124,15 @@ const setupUi = (function () {
             ? `<input type="password" class="su-input" id="suKeyInput" placeholder="Saved (ends &hellip;${escapeHtml(S.keyLast4)}). Paste a new key to replace it" autocomplete="off">`
             : '<input type="password" class="su-input" id="suKeyInput" placeholder="Paste your key here, or skip" autocomplete="off">';
         return `<h2>Final options</h2><p class="hint">These are fine as they are. You can change them later in Settings.</p>
-            <label class="toggle"><span class="sw${S.autoDownload ? '' : ' off'}" data-su="toggle-auto"></span><span><b>Download updates automatically</b><br><span class="muted">Turn this off if you'd rather pick and choose your updates.</span></span></label>
+            <label class="toggle"><span class="sw${S.autoDownload ? '' : ' off'}" data-su="toggle-auto"></span><span><b>Download updates automatically</b><br><span class="muted">Turn this on and ModPacer downloads updates by itself.</span></span></label>
             <div class="su-lbl" style="margin-top:20px">Nexus Premium key (optional)</div>
             <div class="su-row">${keyField}<button data-su="check-key" id="suKeyCheckBtn"${S.keyLast4 ? '' : ' disabled'}>Check</button></div>
-            <div id="suKeyStatus">${window.nexusKeyCheck.statusHtml(S.keyState)}</div>
+            <div id="suKeyStatus">${window.nexusKeyCheck.statusHtml(S.keyState, { inline: true })}</div>
             <div class="su-note">Premium users get automatic downloads. Without it, you get a link to the mod page. Find your key on Nexus: Site preferences &rarr; API keys.</div>
-            ${nav(back(), btn('next', flow.nextLabel(S.manager, 3), 'primary'))}`;
+            ${nav(back(), btn('next', flow.nextLabel(S.manager, S.index), 'primary'))}`;
     }
 
-    // ---- step 5: Helper (Vortex only) ----
+    // ---- step 3 (Vortex): Helper (Vortex only) ----
     // The old "Vortex Collection Helper" is still in Vortex's plugins folder: said once, under the step's heading (never removed for the player).
     const OLD_HELPER_NOTE = 'The old "Vortex Collection Helper" is still installed. Remove it in Vortex > Extensions: Vortex Bridge replaces it.';
     function viewHelper() {
@@ -174,7 +190,7 @@ const setupUi = (function () {
             const open = S.helperStatus && !S.helperStatus.vortexRunning && S.helperStatus.canOpen ? btn('open-vortex', 'Open Vortex for me') : '';
             return `<h2>Restart Vortex</h2><p class="hint">Close and reopen Vortex so it can load the new Vortex Bridge.</p>
                 ${dot('warn', 'Waiting for Vortex to restart...')}
-                ${nav(back(), open + btn('next', flow.nextLabel(S.manager, 4), 'primary', true))}`;
+                ${nav(back(), open + btn('next', flow.nextLabel(S.manager, S.index), 'primary', true))}`;
         }
         if (pane === 'notdetected') {
             return `<h2>Vortex Bridge not found yet</h2><p class="hint">Vortex restarted, but the Vortex Bridge did not load.</p>
@@ -184,7 +200,7 @@ const setupUi = (function () {
         return `<h2>Vortex Bridge ready</h2><p class="hint">Vortex loaded the Vortex Bridge, and they are talking to each other.</p>
             ${dot('ok', S.helperStatus && S.helperStatus.version ? `Vortex Bridge ${escapeHtml(S.helperStatus.version)} installed and running.` : 'Vortex Bridge installed and running.', 'su-gap')}
             <label class="toggle"><span class="sw${S.checkOnStart ? '' : ' off'}" data-su="toggle-checkstart"></span><span><b>Check when Vortex starts</b><br><span class="muted">Runs quietly and alerts you to new updates.</span></span></label>
-            ${nav(back(), btn('next', flow.nextLabel(S.manager, 4), 'primary'))}`;
+            ${nav(back(), btn('next', flow.nextLabel(S.manager, S.index), 'primary'))}`;
     }
 
     // ---- last step: check ----
@@ -264,10 +280,11 @@ const setupUi = (function () {
         render();
         if (!S.dl || !S.mods) {
             const cfg = await api('GET', '/api/settings');
-            let vf = { read: false };
-            if (S.manager === 'vortex') { try { vf = await api('GET', '/api/setup/vortex-folders'); } catch { /* shown as the unreadable state */ } }
+            let vf = { read: false, reason: 'vortex-closed' };
+            if (S.manager === 'vortex') { try { vf = await api('GET', '/api/setup/vortex-folders'); } catch { /* shown as the plain "open Vortex" line */ } }
             if (my !== S.token) return;
-            S.vortexRead = !!vf.read;
+            S.vortexReason = vf.reason;
+            S.touched = { dl: false, mods: false }; // a box the person chose a folder for is never filled in for them
             S.dl = { path: cfg.downloadFolder || vf.downloadFolder || null, problem: null };
             S.mods = { path: cfg.vortexStagingFolder || vf.stagingFolder || null, problem: null };
         }
@@ -276,6 +293,27 @@ const setupUi = (function () {
         if (my !== S.token) return;
         S.foldersLoaded = true;
         render();
+        if (S.manager === 'vortex') startFoldersWatch();
+    }
+
+    // While a Vortex box is empty, ask the Bridge again every few seconds and fill the box the moment it answers (the same quiet polling as
+    // the other steps). Stops when both boxes have a folder, when the person chose one themselves, or when they leave the step (go() stops the timer).
+    function startFoldersWatch() {
+        stopTimer();
+        if (!flow.foldersPollWanted(S)) return;
+        const my = S.token;
+        timer = setInterval(async () => {
+            let vf = null;
+            try { vf = await api('GET', '/api/setup/vortex-folders'); } catch { /* try again next tick */ }
+            if (!S || my !== S.token || kind() !== 'folders' || !vf) return;
+            const fill = flow.foldersFill(S, vf); // worked out after the answer came back: a folder chosen meanwhile wins
+            const reasonChanged = vf.reason !== S.vortexReason;
+            S.vortexReason = vf.reason;
+            for (const which of Object.keys(fill)) { S[which] = { path: fill[which], problem: null }; await checkFolder(which, my); }
+            if (my !== S.token) return;
+            if (!flow.foldersPollWanted(S)) stopTimer();
+            if (Object.keys(fill).length || reasonChanged) render();
+        }, flow.FOLDERS_POLL_MS);
     }
     async function checkFolder(which, my) {
         const f = S[which];
@@ -402,7 +440,9 @@ const setupUi = (function () {
             S.skyrim = { path, state: r.state };
         } else {
             S[which] = { path, problem: null };
+            S.touched[which] = true; // chosen by the person: never replaced by what the Bridge says
             await checkFolder(which);
+            if (timer && !flow.foldersPollWanted(S)) stopTimer();
         }
         render();
     }
@@ -428,7 +468,7 @@ const setupUi = (function () {
     // ---- events ----
     // The Nexus key's Check (the Options step): a dot and one word, the same markup as the Settings tab (web/public/nexus-key-check.js). Only the status area and the button are
     // touched, never a full render (that would wipe what was typed). Typing clears the status; an empty box with no saved key keeps Check disabled.
-    function paintKeyStatus() { const el = $('suKeyStatus'); if (el) el.innerHTML = window.nexusKeyCheck.statusHtml(S && S.keyState); }
+    function paintKeyStatus() { const el = $('suKeyStatus'); if (el) el.innerHTML = window.nexusKeyCheck.statusHtml(S && S.keyState, { inline: true }); }
     async function checkKey() {
         const input = $('suKeyInput');
         const key = input ? input.value.trim() : '';
@@ -491,7 +531,8 @@ const setupUi = (function () {
                 await go(S.index + 1);
             } else if (action === 'open-vortex') {
                 try { await api('POST', '/api/open-vortex'); } catch (err) { S.error = err.message; render(); }
-            } else if (action === 'run-check') await runCheck();
+            } else if (action === 'open-log') await api('POST', '/api/open-log-folder');
+            else if (action === 'run-check') await runCheck();
             else if (action === 'cancel-check') { S.checkToken++; S.checkPane = 'ready'; render(); }
             else if (action === 'show-updates') close();
         } catch (err) {

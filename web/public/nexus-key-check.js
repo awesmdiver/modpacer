@@ -19,6 +19,7 @@
     // The area keeps a FIXED height (a dot line plus one small line) so nothing below it moves when the answer arrives.
     function statusHtml(state, opts) {
         const withPremium = !!(opts && opts.premium);
+        const inline = !!(opts && opts.inline); // the setup step: one line, so it needs less room (a failure reads "Failed. <reason>" on the same line)
         let inner = '';
         const small = (t) => `<div class="muted" style="font-size:0.8rem;margin:2px 0 0 17px">${esc(t)}</div>`;
         if (state && state.phase === 'checking') inner = '<div class="su-status"><span class="su-dot info"></span><span>Checking&hellip;</span></div>';
@@ -26,9 +27,11 @@
             inner = '<div class="su-status"><span class="su-dot ok"></span><span>Verified</span></div>'
                 + (withPremium ? small(state.premium ? PREMIUM_YES : PREMIUM_NO) : '');
         } else if (state && state.phase === 'failed') {
-            inner = '<div class="su-status"><span class="su-dot err"></span><span>Failed</span></div>' + small(REASONS[state.kind] || REASONS.unreachable);
+            inner = inline
+                ? '<div class="su-status"><span class="su-dot err"></span><span>Failed. ' + esc(REASONS[state.kind] || REASONS.unreachable) + '</span></div>'
+                : '<div class="su-status"><span class="su-dot err"></span><span>Failed</span></div>' + small(REASONS[state.kind] || REASONS.unreachable);
         }
-        return `<div class="nexus-check-status" data-nexus-check-status style="height:3.1em;overflow:hidden">${inner}</div>`;
+        return `<div class="nexus-check-status" data-nexus-check-status style="height:${inline ? '1.9em' : '3.1em'};overflow:hidden">${inner}</div>`;
     }
 
     // Runs one check through `request(method, url, body)` (the page's api function, which throws an Error carrying `.kind` for a non-2xx answer).

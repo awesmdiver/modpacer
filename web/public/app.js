@@ -19,6 +19,11 @@ async function api(method, url, body) {
     return data;
 }
 
+// A link from outside text (a Hub listing) is only ever followed when it is a plain web address: never javascript:, data: and the like.
+function webUrl(u) {
+    return /^https?:\/\//i.test(String(u == null ? '' : u).trim()) ? String(u).trim() : '';
+}
+
 function escapeHtml(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
@@ -194,10 +199,10 @@ function countsLine(row) {
     return `<div class="counts"${title}>${formatCount(s.downloads)} ${plural(s.downloads, 'visit', 'visits')} &middot; ${formatCount(s.endorsements)} endorsed</div>`;
 }
 function releaseIcon(row) {
-    if (!row.externalUrl) return '';
+    if (!webUrl(row.externalUrl)) return '';
     // On a row whose Hub link is out of date the icon is the way to the download, and its hover says so.
     const label = row.linkOutOfDate ? linkOutOfDateWords(row).hover : 'Mod page';
-    return `<a href="${escapeHtml(row.externalUrl)}"${visitAttr(row)} target="_blank" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}" role="img">&#8599;</a>`;
+    return `<a href="${escapeHtml(webUrl(row.externalUrl))}"${visitAttr(row)} target="_blank" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}" role="img">&#8599;</a>`;
 }
 // The words for a row whose Hub link points at an older release than the version the Hub lists (final wording by Gemini,
 // design/gemini-link-out-of-date-line.md). The short line shows on a narrow window (style.css: .link-ood).
@@ -349,10 +354,10 @@ function renderRow(row) {
         changesHtml = `<div class="changes link-ood"><span class="link-ood-long">${escapeHtml(words.long)}</span><span class="link-ood-short">${escapeHtml(words.short)}</span></div>`;
     } else if (row.status === 'needs_you') {
         if (row.urlKind === 'nexus') {
-            action = `<button data-action="open-link"${visitAttr(row)} data-url="${escapeHtml(row.externalUrl)}">Open on Nexus</button>`;
+            action = `<button data-action="open-link"${visitAttr(row)} data-url="${escapeHtml(webUrl(row.externalUrl))}">Open on Nexus</button>`;
             changesHtml = `<div class="changes">Nexus only allows automatic downloads for Premium members. Add your API key in <b>Settings</b>, or download it directly from Nexus.</div>`;
         } else {
-            action = row.externalUrl ? `<button data-action="open-link"${visitAttr(row)} data-url="${escapeHtml(row.externalUrl)}">View release</button>` : '';
+            action = webUrl(row.externalUrl) ? `<button data-action="open-link"${visitAttr(row)} data-url="${escapeHtml(webUrl(row.externalUrl))}">View release</button>` : '';
         }
     } else if ((row.status === 'up_to_date' || row.status === 'unknown_version') && row.vortexWaiting) {
         // Vortex was still busy when this was checked: no "Up to date" until Vortex has really answered (checked again by itself).
@@ -580,7 +585,17 @@ function deployNoticeHtml() {
     </div>`;
 }
 
+// One quiet line when the Plugin Hub lists a newer ModPacer (state.selfUpdate); nothing at all otherwise. The link is shown only for a plain https address.
+function renderSelfUpdateLine(state) {
+    const el = $('selfUpdateLine');
+    const s = state && state.selfUpdate;
+    if (!s || !s.version) { el.innerHTML = ''; return; }
+    const link = /^https:\/\//i.test(String(s.url || '')) ? ` <a href="${escapeHtml(s.url)}" target="_blank" rel="noopener noreferrer">Get it</a>` : '';
+    el.innerHTML = `<div class="muted" data-self-update style="margin-top:12px">ModPacer ${escapeHtml(s.version)} is available.${link}</div>`;
+}
+
 function renderDeployLine(state) {
+    renderSelfUpdateLine(state);
     renderDeployLineInner(state);
     if (deployNotice && !deployBusy) $('deployLine').insertAdjacentHTML('afterbegin', deployNoticeHtml());
 }
@@ -700,7 +715,7 @@ function notInstalledAction(row) {
         return '';
     }
     if (row.status === 'needs_you' || (row.urlKind === 'nexus' && !nexusKeySet)) {
-        return row.externalUrl ? `<button data-action="open-link"${visitAttr(row)} data-url="${escapeHtml(row.externalUrl)}">Open on Nexus</button>` : '';
+        return webUrl(row.externalUrl) ? `<button data-action="open-link"${visitAttr(row)} data-url="${escapeHtml(webUrl(row.externalUrl))}">Open on Nexus</button>` : '';
     }
     if (!hasDownload(row)) return ''; // neither GitHub nor Nexus: only the Mod page link
     const off = downloadFolderMissing || batchRunning || installAllBusy;
@@ -742,6 +757,20 @@ function notInstalledSectionHtml(state, niRows) {
     return sectionHtml('notinstalled', 'Mods not installed', String(niRows.length), niRows, installAllHtml, body);
 }
 
+// SkyrimNet could not be found: one warning line, what was looked at, what ModPacer needs, and a way to point at it by hand.
+function renderSkyrimNetNotFound(search) {
+    const box = $('skyrimNetNotFound');
+    if (!search) { box.style.display = 'none'; box.innerHTML = ''; return; }
+    const list = (search.places || []).slice(0, 8).map((p) => `<li><code>${escapeHtml(p)}</code></li>`).join('');
+    const more = (search.places || []).length > 8 ? `<li>and ${(search.places || []).length - 8} more</li>` : '';
+    box.innerHTML = `&#9888;&#65039; ModPacer couldn't find SkyrimNet.`
+        + `<div>The folder you gave it: <code>${escapeHtml(search.given || '')}</code></div>`
+        + `<div>It looked in:</div><ul>${list}${more}</ul>`
+        + `<div>It needs a folder named <code>SkyrimNet</code> with a <code>config</code> folder inside.</div>`
+        + `<div><button data-action="pick-skyrimnet">Choose the SkyrimNet folder&hellip;</button></div>`;
+    box.style.display = 'block';
+}
+
 function renderPlugins(state) {
     appliedSeq = ++stateSeq; // anything asked for before this paint is older than it
     lastRenderedState = state;
@@ -751,9 +780,11 @@ function renderPlugins(state) {
     // Check now waits for setup to finish (queue: first-run-setup-steps, 2026-10-03).
     $('checkNowBtn').disabled = !!state.needsSetup;
     renderSetupBanner(state);
+    const notFound = !state.needsSetup && state.error && state.skyrimNetSearch ? state.skyrimNetSearch : null;
+    renderSkyrimNetNotFound(notFound);
     if (state.error || state.needsSetup) {
-        $('topError').style.display = state.needsSetup ? 'none' : 'block';
-        $('topError').textContent = state.needsSetup ? '' : state.error;
+        $('topError').style.display = state.needsSetup || notFound ? 'none' : 'block';
+        $('topError').textContent = state.needsSetup || notFound ? '' : state.error;
         $('summary').innerHTML = '';
         $('pluginList').innerHTML = '';
         $('subtitle').textContent = '';
@@ -898,6 +929,15 @@ $('openDownloadFolderBtn').addEventListener('click', async () => {
     }
 });
 
+// Opens the folder that holds the log (update.log) in Explorer, to send us when something goes wrong. Same pattern as the download folder.
+$('openLogFolderBtn').addEventListener('click', async () => {
+    try {
+        await api('POST', '/api/open-log-folder');
+    } catch (err) {
+        alert(err.message);
+    }
+});
+
 // Tells the plugins page a mod's own page was opened (the Mod page arrow, Open on Nexus). Fire and forget: never awaited, never shown, never blocks
 // the link. The server ignores a second click on the same mod within 10 seconds, and does nothing when the Settings switch is off.
 function sendVisit(id) {
@@ -921,7 +961,8 @@ document.addEventListener('click', async (e) => {
     } else if (action === 'open-link') {
         e.preventDefault();
         sendVisit(el.dataset.visitId); // the count goes out in the background; the page opens right now, from this click
-        window.open(el.dataset.url, '_blank');
+        const target = webUrl(el.dataset.url);
+        if (target) window.open(target, '_blank', 'noopener,noreferrer');
     } else if (action === 'open-helper-zip') {
         e.preventDefault();
         await openHelperZipClick();
@@ -929,6 +970,13 @@ document.addEventListener('click', async (e) => {
         e.preventDefault();
         const setup = lastRenderedState && lastRenderedState.setup;
         await setupUi.open({ step: setup && setup.step ? setup.step : 1 });
+    } else if (action === 'pick-skyrimnet') {
+        e.preventDefault();
+        const { path } = await api('POST', '/api/settings/browse-folder', { title: 'Choose the SkyrimNet folder (the one with a config folder inside)' });
+        if (!path) return;
+        await api('POST', '/api/settings', { skyrimNetFolder: path });
+        loadTheme();
+        renderPlugins(await api('POST', '/api/check', { force: false }));
     } else if (action === 'goto-settings') {
         e.preventDefault();
         document.querySelector('.tab[data-tab="settings"]').click();
@@ -1524,16 +1572,30 @@ async function loadSettings() {
     applyModManagerSettings(cfg);
     $('downloadFolderInput').value = cfg.downloadFolder || '';
     $('skyrimInstallPathInput').value = cfg.skyrimInstallPath || '';
+    paintMo2Folder(cfg);
+    $('skyrimNetFolderInput').value = cfg.skyrimNetFolder || '';
     $('vortexStagingFolderInput').value = cfg.vortexStagingFolder || '';
     $('checkOnVortexStartToggle').classList.toggle('off', !cfg.checkOnVortexStart);
     $('autoDownloadToggle').classList.toggle('off', !cfg.autoDownload);
     $('showAdultToggle').classList.toggle('off', !cfg.showAdultNotInstalled);
     $('tellHubToggle').classList.toggle('off', cfg.tellHubOnInstall === false);
+    $('tellNewModPacerToggle').classList.toggle('off', cfg.tellNewModPacer === false);
+    $('keepLogToggle').classList.toggle('off', cfg.keepLog === false);
     adultConfirmed = !!cfg.adultConfirmed;
     $('deleteOldDownloadToggle').classList.toggle('off', !cfg.deleteOldDownloadAfterUpdate);
     $('skyrimInstallStatus').textContent = cfg.skyrimInstallPath ? '' : '';
     renderNexusKeyField(cfg.nexusApiKeyLast4 || null);
     return cfg;
+}
+
+// Mod Organizer 2 only: the one folder that finds the rest. A problem with it (no settings in it, another game, several setups) is the one warning line.
+function paintMo2Folder(cfg) {
+    const isMo2 = cfg.modManager === 'mo2';
+    $('mo2FolderField').style.display = isMo2 ? '' : 'none';
+    $('mo2FolderInput').value = cfg.mo2Folder || '';
+    const warn = $('mo2FolderProblem');
+    warn.style.display = isMo2 && cfg.mo2Problem ? '' : 'none';
+    warn.innerHTML = isMo2 && cfg.mo2Problem ? `&#9888;&#65039; ${escapeHtml(cfg.mo2Problem)}` : '';
 }
 
 // The Nexus key block in Settings. A dot and one word (Verified / Failed) from the shared nexus-key-check.js, the same as the setup step. A key already saved is checked once per
@@ -1629,13 +1691,16 @@ document.querySelectorAll('[data-browse]').forEach((btn) => {
         const { path } = await api('POST', '/api/settings/browse-folder', { title: btn.dataset.title, initialDir: input.value || undefined });
         if (!path) return;
         input.value = path;
-        const key = { downloadFolderInput: 'downloadFolder', skyrimInstallPathInput: 'skyrimInstallPath', vortexStagingFolderInput: 'vortexStagingFolder' }[input.id];
-        await api('POST', '/api/settings', { [key]: path });
+        const key = { downloadFolderInput: 'downloadFolder', skyrimInstallPathInput: 'skyrimInstallPath', skyrimNetFolderInput: 'skyrimNetFolder', mo2FolderInput: 'mo2Folder', vortexStagingFolderInput: 'vortexStagingFolder' }[input.id];
+        const saved = await api('POST', '/api/settings', { [key]: path });
+        if (key === 'mo2Folder' || key === 'skyrimInstallPath' || key === 'vortexStagingFolder') await loadSettings(); // the server may have filled in the other folders
+        else if (saved) paintMo2Folder(saved);
         // Every one of these three folders is something a Plugins-tab row depends on (queue:
         // plugins-tab-notice-saved-settings, 2026-09-30) -- refresh unconditionally, not just for
         // the Skyrim folder as before.
         refreshState();
-        if (key === 'skyrimInstallPath') loadTheme();
+        if (key === 'skyrimInstallPath' || key === 'skyrimNetFolder' || key === 'mo2Folder') loadTheme();
+        if (key === 'skyrimNetFolder' || key === 'mo2Folder') { try { renderPlugins(await api('POST', '/api/check', { force: false })); } catch { /* the next check shows it */ } }
     });
 });
 
@@ -1683,6 +1748,8 @@ $('showAdultToggle').addEventListener('click', async () => {
 wireToggle($('checkOnVortexStartToggle'), 'checkOnVortexStart');
 wireToggle($('autoDownloadToggle'), 'autoDownload');
 wireToggle($('tellHubToggle'), 'tellHubOnInstall');
+wireToggle($('tellNewModPacerToggle'), 'tellNewModPacer');
+wireToggle($('keepLogToggle'), 'keepLog');
 wireToggle($('deleteOldDownloadToggle'), 'deleteOldDownloadAfterUpdate');
 
 // --- SkyrimNet theme ---

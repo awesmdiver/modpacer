@@ -48,7 +48,7 @@ The file is in the `helper` folder inside your ModPacer folder.
 
 If Vortex is waiting for you to click something (like a pop-up warning), ModPacer will tell you. Just switch to Vortex, answer the pop-up, and ModPacer will keep going.
 
-**For Mod Organizer 2 users:** ModPacer downloads new files straight into your MO2 downloads folder and stops there. You install them in MO2 just like you normally do.
+**For Mod Organizer 2 users:** ModPacer downloads new files straight into your MO2 downloads folder and stops there. You install them in MO2 just like you normally do. In **Settings**, pick your **Mod Organizer 2 folder** (the one with `ModOrganizer.exe`). ModPacer reads it to find your mods and your Skyrim folder, and never changes it.
 
 ## How to Change Your Mod Manager in ModPacer
 
@@ -88,10 +88,13 @@ Want your mod listed? Publish it on the SkyrimNet Plugin Hub and ModPacer will f
 
 - Everything ModPacer saves lives right in its own folder. To completely remove ModPacer, just delete that folder.
 - Your Nexus key, if you add one, stays safely on your PC.
+- ModPacer keeps a small log in its own `logs` folder, with no keys in it. Turn it off any time with **Keep a log** in Settings.
+- To tell you when a new ModPacer is out, it reads its own listing on the Plugin Hub, the list it already reads. Turn it off any time in **Settings**.
 - The only thing sent over the internet is the mod's name and version to fateless.ai when you install, update, or open a page (and you can turn that off).
 
 ## Stuck?
 
 - **"Vortex isn't answering":** Check that Vortex is open and has no pop-ups waiting, then click **Retry**.
 - **Nothing shows up in a section:** The tile might count a mod, but the list can be empty if that mod is filtered out (like a hidden adult mod).
-- **Still stuck?** Open an issue on the [ModPacer Issues page](https://github.com/awesmdiver/modpacer/issues).
+- **"I can't find SkyrimNet":** In **Settings**, pick your **Mod Organizer 2 folder**, or pick the **SkyrimNet folder** yourself (the one with a `config` folder inside it). ModPacer's message lists the folders it checked.
+- **Still stuck?** Open **Settings**, press **Open log folder**, and send us `update.log` on the [ModPacer Issues page](https://github.com/awesmdiver/modpacer/issues). Please don't send `config.json`: it holds your settings, including a Nexus key if you added one.
