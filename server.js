@@ -311,10 +311,12 @@ function buildApp() {
         // to read, just keep picking their own). Best-effort: an older Helper (no /paths yet) or the
         // Helper simply not running both fall through to leaving this empty, same as before this
         // feature existed.
-        if (!cfg.vortexStagingFolder && !modManager.isMo2(cfg)) { // never ask Vortex anything once MO2 is chosen
+        // Only once the player has chosen Vortex: before that (a clean install on step 1) or with Mod Organizer 2 it asks Vortex nothing,
+        // so a Vortex folder can never land in the settings of someone who then picks Mod Organizer 2 (1.1.1, the director's clean install).
+        if (!cfg.vortexStagingFolder && modManager.getModManager(cfg) === 'vortex') {
             const paths = await vortexHelperClient.getPaths();
             if (paths && paths.stagingFolder) {
-                cfg = appConfig.saveConfig({ vortexStagingFolder: paths.stagingFolder });
+                cfg = appConfig.saveConfig({ vortexStagingFolder: paths.stagingFolder, stagingFolderFromVortex: true });
             }
         }
         res.json(settingsPayload(cfg));
@@ -336,6 +338,7 @@ function buildApp() {
         // MO2: one folder is enough -- fill what is not set from ModOrganizer.ini (read only), and turn a program or base
         // folder given as the staging or Skyrim folder into the real folder.
         const toSave = { ...checked.patch };
+        if ('vortexStagingFolder' in toSave) toSave.stagingFolderFromVortex = false; // the person's own folder from now on
         if (modManager.isMo2(appConfig.loadConfig())) Object.assign(toSave, mo2Instance.derivePatch(appConfig.loadConfig(), toSave));
         // The switch's own two lines: "turned off" is written BEFORE it stops (so a later report shows why the log is quiet), "turned on" after it starts.
         const wasKeeping = appConfig.loadConfig().keepLog !== false;
@@ -391,7 +394,15 @@ function buildApp() {
         const current = modManager.getModManager(appConfig.loadConfig());
         if (current && current !== choice) { logArea('setup', `mod manager: kept ${current} (a change to ${choice} was refused)`); return res.status(409).json({ error: MOD_MANAGER_LOCKED }); }
         logArea('setup', `mod manager: ${choice}`);
-        res.json(settingsPayload(appConfig.saveConfig({ modManager: choice })));
+        const patch = { modManager: choice };
+        const before = appConfig.loadConfig();
+        // A staging folder ModPacer itself filled in from Vortex is not an MO2 folder: clear it (one the person typed or browsed to stays).
+        if (choice === 'mo2' && before.stagingFolderFromVortex && before.vortexStagingFolder) {
+            patch.vortexStagingFolder = null;
+            patch.stagingFolderFromVortex = false;
+            logArea('setup', 'Mods folder: cleared (it had been filled in from Vortex)');
+        }
+        res.json(settingsPayload(appConfig.saveConfig(patch)));
     });
 
     // Step 2: the saved Skyrim folder, or the auto-detected one, and whether it really holds SkyrimSE.exe.

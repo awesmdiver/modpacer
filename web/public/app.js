@@ -796,7 +796,7 @@ function renderPlugins(state) {
     }
     $('topError').style.display = 'none';
     renderDownloadFolderBanner(downloadFolderMissing);
-    renderVortexHelperBanner(state.modManager === 'mo2' ? null : (vortexLostNotice ? 'vortex_running_helper_unreachable' : state.vortexHelperState));
+    renderVortexHelperBanner(state.modManager !== 'vortex' ? null : (vortexLostNotice ? 'vortex_running_helper_unreachable' : state.vortexHelperState));
     renderHelperNotInstalledBanner(state);
 
     const allRows = state.rows || [];
