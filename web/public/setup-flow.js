@@ -6,9 +6,13 @@
     // Same lists as lib/first-run-setup.js (a test keeps the two equal). Not chosen yet counts as Vortex.
     const VORTEX_KINDS = ['manager', 'skyrim', 'helper', 'folders', 'options', 'check'];
     const MO2_KINDS = ['manager', 'skyrim', 'folders', 'options', 'check'];
+    let platform = 'win32';
+    function setPlatform(p) { platform = p || 'win32'; }
     const NAMES = { manager: 'Mod manager', skyrim: 'Skyrim', folders: 'Folders', options: 'Options', helper: 'Bridge', check: 'Check' };
 
-    function stepKinds(manager) { return manager === 'mo2' ? MO2_KINDS : VORTEX_KINDS; }
+    function stepKinds(manager) {
+        return manager === 'mo2' ? MO2_KINDS : VORTEX_KINDS;
+    }
     function stepNames(manager) { return stepKinds(manager).map((k) => NAMES[k]); }
 
     // The text on the Next button of each step ("Next: Skyrim", ...), named after the step it leads to.
@@ -130,7 +134,7 @@
         return (!state.dl.path && !state.touched.dl) || (!state.mods.path && !state.touched.mods);
     }
 
-    const api = { FOLDERS_POLL_MS, foldersNote, foldersFill, foldersPollWanted, stepKinds, stepNames, nextLabel, helperEntryPane, helperCheckPane, BRIDGE_MISSING, BRIDGE_OUTDATED, BRIDGE_UNREACHABLE, bridgeNewerText, bridgeStepsHtml, createRestartWatcher, summaryLine, completionText, countWaitingUpdates, unfinishedText, folderProblemText };
+    const api = { setPlatform, FOLDERS_POLL_MS, foldersNote, foldersFill, foldersPollWanted, stepKinds, stepNames, nextLabel, helperEntryPane, helperCheckPane, BRIDGE_MISSING, BRIDGE_OUTDATED, BRIDGE_UNREACHABLE, bridgeNewerText, bridgeStepsHtml, createRestartWatcher, summaryLine, completionText, countWaitingUpdates, unfinishedText, folderProblemText };
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
     else root.setupFlow = api;
 })(typeof window !== 'undefined' ? window : globalThis);

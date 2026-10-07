@@ -13,7 +13,15 @@ const firstRunSetup = require('./lib/first-run-setup');
 const helperBundle = require('./lib/helper-bundle');
 const { logUpdate, logArea, logAreaOnce, noteSecret, logFile } = require('./lib/update-log');
 const os = require('os');
-const { pickFolderAsync } = require('./lib/vortex-sync/win-dialog');
+const platform = require('./lib/platform');
+// The "Browse..." folder chooser: the one this system has.
+function pickFolderAsync(opts) {
+    return require('./lib/vortex-sync/win-dialog').pickFolderAsync(opts);
+}
+// false when there is no chooser to draw on this system: the page then shows a box to type the folder in.
+function canBrowse() {
+    return true;
+}
 const nexus = require('./lib/nexus');
 const { openDownloadFolder } = require('./lib/open-download-folder');
 const { readTheme } = require('./lib/skyrimnet-theme');
@@ -46,6 +54,9 @@ function settingsPayload(cfg) {
         helperDownloadUrl: modManager.HELPER_DOWNLOAD_URL,
         helperBundled: helperBundle.isBundled(),
         setup: firstRunSetup.setupSummary(cfg),
+        // The page leaves out what this system does not have, and lets the person type a folder when there is no chooser.
+        platform: platform.current(),
+        canBrowse: canBrowse(),
         // MO2 only: a plain-words problem with the MO2 folder the player picked (nothing usable in it), else null.
         mo2Problem: manager === 'mo2' && cfg.mo2Folder ? mo2Instance.resolveInstance(cfg.mo2Folder).problem : null,
     };
@@ -300,7 +311,7 @@ function buildApp() {
 
     app.get('/api/theme', (req, res) => {
         const cfg = appConfig.loadConfig();
-        res.json(readTheme(cfg.skyrimInstallPath, { skyrimNetFolder: cfg.skyrimNetFolder, modsFolder: cfg.vortexStagingFolder, mo2Folder: modManager.isMo2(cfg) ? cfg.mo2Folder : null }));
+        res.json(readTheme(cfg.skyrimInstallPath, { skyrimNetFolder: cfg.skyrimNetFolder, modsFolder: cfg.vortexStagingFolder, downloadFolder: cfg.downloadFolder, mo2Folder: modManager.isMo2(cfg) ? cfg.mo2Folder : null }));
     });
 
     app.get('/api/settings', async (req, res) => {
@@ -373,6 +384,7 @@ function buildApp() {
 
     app.post('/api/settings/browse-folder', async (req, res) => {
         try {
+            if (!canBrowse()) return res.json({ path: null, noChooser: true }); // no chooser on this system: the page shows a typing box instead
             const picked = await pickFolderAsync({ title: req.body && req.body.title, initialDir: req.body && req.body.initialDir });
             res.json({ path: picked });
         } catch (e) {
@@ -387,7 +399,7 @@ function buildApp() {
     // ---- First-run setup (queue: first-run-setup-steps). The page's step-by-step pop-up asks these. ----
 
     // Step 1: the one place the mod manager is saved. Allowed while none is chosen yet; afterwards only a repeat of the
-    // same answer is accepted. Changing it means a fresh install (delete %APPDATA%\ModPacer).
+    // same answer is accepted. Changing it means a fresh install (delete ModPacer's data folder).
     app.post('/api/setup/mod-manager', (req, res) => {
         const choice = req.body && req.body.modManager;
         if (choice !== 'vortex' && choice !== 'mo2') return res.status(400).json({ error: 'Pick Vortex or Mod Organizer 2.' });
@@ -514,9 +526,12 @@ function buildApp() {
 }
 
 // The first lines of every run: versions and where the data lives. Never a key, never a path outside this app's own data folder choice.
+function systemName() {
+    return 'Windows';
+}
 function logStart(mode, port) {
     try {
-        logArea('start', `ModPacer ${APP_VERSION} (${mode}); Node ${process.versions.node}; Windows ${os.release()} (${os.arch()}); data folder: ${process.env.MODPACER_DATA_DIR ? 'moved' : 'default'}; mod manager: ${modManager.getModManager() || 'not chosen yet'}${port ? `; port ${port}` : ''}`);
+        logArea('start', `ModPacer ${APP_VERSION} (${mode}); Node ${process.versions.node}; ${systemName()} ${os.release()} (${os.arch()}); data folder: ${process.env.MODPACER_DATA_DIR ? 'moved' : 'default'}; mod manager: ${modManager.getModManager() || 'not chosen yet'}${port ? `; port ${port}` : ''}`);
     } catch { /* the log is never a reason to fail */ }
 }
 
@@ -686,7 +701,7 @@ function openBrowser(url) {
 if (require.main === module) {
     // Written on every real run, interactive or --check -- see helper-pointer.js's own header
     // comment for why this always happens up front, before branching into either mode below.
-    writeInstallPointer(__dirname, PORT);
+    if (platform.isWindows()) writeInstallPointer(__dirname, PORT); // only the Vortex Bridge reads it
     if (process.argv.includes('--check')) {
         logStart('background check');
         printStartupNotice();
@@ -724,7 +739,7 @@ if (require.main === module) {
             if (outcome.openUrl) {
                 openBrowser(outcome.openUrl);
                 // A few seconds to actually read the message before the window closes on its own
-                // (start.bat only pauses on a nonzero exit code -- see that file's own comment).
+                // (the Windows launcher only pauses on a nonzero exit code -- see its own comment).
                 setTimeout(() => process.exit(0), 3000);
             } else {
                 process.exitCode = outcome.exitCode;

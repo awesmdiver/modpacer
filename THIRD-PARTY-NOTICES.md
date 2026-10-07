@@ -101,5 +101,9 @@ and fateless.ai. When the player installs or updates a mod, or opens its page, t
 The little icon on each row's plugins-page link is the **fateless.ai** site mark (<https://fateless.ai/favicon.svg>, the rune ᚠ in cyan on a dark rounded square), by **fateless.ai / the SkyrimNet team**. It is
 used here with the permission of the SkyrimNet author, Min (2026-10-04), and redrawn as plain SVG paths so it shows the same on every PC. It is a brand mark and stays theirs; it is not under this project's license.
 
-It also works with **Vortex**, **Mod Organizer 2** and **Nexus Mods**. None of their code is included beyond what is listed
+## Mod Organizer 2
+
+ModPacer reads **Mod Organizer 2**'s settings file (`ModOrganizer.ini`) and the active profile's mod list (`modlist.txt`) to find your folders and to know which mods are switched on and in what order (<https://github.com/ModOrganizer2/modorganizer>, GPL-3.0). Only the file formats were read from its public repository; **no Mod Organizer 2 code is included.** ModPacer never writes into its folders.
+
+It also works with **Vortex** and **Nexus Mods**. None of their code is included beyond what is listed
 above.

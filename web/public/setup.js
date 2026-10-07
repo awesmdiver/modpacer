@@ -25,7 +25,14 @@ const setupUi = (function () {
         modpacerFetch('/api/log-shown', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) }).catch(() => {});
     }
     const dot = (kind, text, extra) => (reportShown(kind, text), `<div class="su-status${extra ? ' ' + extra : ''}"><span class="su-dot ${kind}"></span><span>${text}</span></div>`);
-    const pathBox = (p) => (p ? `<div class="su-path" title="${escapeHtml(p)}">${escapeHtml(p)}</div>` : '<div class="su-path empty">No folder chosen yet</div>');
+    // The folder is only shown; Browse changes it.
+    const shownPath = (p) => (p ? `<div class="su-path" title="${escapeHtml(p)}">${escapeHtml(p)}</div>` : '<div class="su-path empty">No folder chosen yet</div>');
+    function pathBox(p, which) {
+        return shownPath(p);
+    }
+    function browseBtn(action, cls) {
+        return btn(action, 'Browse&hellip;', cls);
+    }
     const btn = (action, label, cls, disabled) => `<button${cls ? ` class="${cls}"` : ''} data-su="${action}"${disabled ? ' disabled' : ''}>${label}</button>`;
     const link = (action, label) => `<button class="su-link" data-su="${action}">${label}</button>`;
     const nav = (left, right) => `<div class="su-nav"><span>${left}</span><span class="su-nav-r">${right}</span></div>`;
@@ -82,14 +89,17 @@ const setupUi = (function () {
             statusHtml = dot('info', 'Looking for Skyrim&hellip;');
         } else {
             state = sk.state;
-            if (state === 'found') statusHtml = dot('ok', 'Found it! Press Browse if you need a different copy of Skyrim.');
+            if (state === 'found') {
+                let foundText = 'Found it! Press Browse if you need a different copy of Skyrim.';
+                statusHtml = dot('ok', foundText);
+            }
             else if (state === 'wrong') statusHtml = dot('err', '<code>SkyrimSE.exe</code> isn\'t in that folder. Make sure you pick the main game folder.');
             else statusHtml = dot('warn', 'We couldn\'t find Skyrim. Please choose the folder containing <code>SkyrimSE.exe</code>.');
         }
         return `<h2>Where is Skyrim?</h2><p class="hint">We need your Skyrim folder to check which plugins you have.</p>
-            <div class="su-row">${pathBox(sk && sk.path)}${btn('browse-skyrim', 'Browse&hellip;', state === 'found' || !sk ? '' : 'primary')}</div>
+            <div class="su-row">${pathBox(sk && sk.path, 'skyrim')}${browseBtn('browse-skyrim', state === 'found' || !sk ? '' : 'primary')}</div>
             ${statusHtml}
-            ${nav(back(), btn('next', flow.nextLabel(S.manager, 1), 'primary', state !== 'found'))}`;
+            ${nav(back(), btn('next', flow.nextLabel(S.manager, S.index), 'primary', state !== 'found'))}`;
     }
 
     // ---- step 3: folders ----
@@ -97,7 +107,7 @@ const setupUi = (function () {
         const f = S[which];
         const problem = f && f.problem && f.problem !== 'empty' ? dot('err', escapeHtml(flow.folderProblemText(f.problem))) : '';
         return `<div class="su-lbl">${label}</div>
-            <div class="su-row">${pathBox(f && f.path)}${btn('browse-' + which, 'Browse&hellip;', f && f.path && !f.problem ? '' : 'primary')}</div>
+            <div class="su-row">${pathBox(f && f.path, which)}${browseBtn('browse-' + which, f && f.path && !f.problem ? '' : 'primary')}</div>
             ${problem}<div class="su-note">${noteHtml}</div>`;
     }
     function viewFolders() {
@@ -223,10 +233,31 @@ const setupUi = (function () {
                 ${nav(back(), open + btn('run-check', 'Check my mods', 'primary', true))}`;
         }
         if (pane === 'loading') return `<h2>All set</h2>${dot('info', 'One moment&hellip;')}${nav(back(), '')}`;
-        const hint = S.manager === 'mo2' ? 'Time to look for updates. They\'ll save to your downloads folder, ready to add in MO2.' : 'Time to look for updates to your SkyrimNet plugins.';
+        const SAVES_TO_DOWNLOADS = 'Updates will save to your downloads folder for you to add in your mod manager.';
+        let hint = S.manager === 'mo2' ? SAVES_TO_DOWNLOADS : 'Time to look for updates to your SkyrimNet plugins.';
         return `<h2>All set</h2><p class="hint">${hint}</p>
             <p class="su-big">Skyrim: <b>found</b> &middot; Mod manager: <b>${mgrName}</b> &middot; Folders: <b>chosen</b></p>
+            ${snAsk()}
             ${nav(back(), btn('run-check', 'Check my mods', 'primary'))}`;
+    }
+
+    // The check could not find SkyrimNet: ask right here where it is (the same pick-a-folder control as the main page, a typed box when
+    // there is no chooser), and say why a folder chosen before was turned down. The places it looked in are in the log, not here.
+    function snAsk() {
+        const sn = S.snSearch;
+        if (!sn) return '';
+        const offs = sn.switchedOff || [];
+        const off = offs.length ? dot('warn', `Turn on <code>${escapeHtml(offs[0])}</code> in Mod Organizer 2, or choose the folder below.`) + (offs.length > 1 ? `<p class="hint">Several mods: <code>${escapeHtml(offs[0])}</code> and ${offs.length - 1} more.</p>` : '') : '';
+        const bad = sn.chosenProblem ? dot('warn', `That folder doesn't look like <code>SkyrimNet</code> (${escapeHtml(sn.chosenProblem.why)}).`) : '';
+        let snPaths;
+        if ((S.platform || 'win32') === 'win32') snPaths = '<code>overwrite\\SKSE\\Plugins\\SkyrimNet</code> or <code>Stock Game\\Data\\SKSE\\Plugins\\SkyrimNet</code>';
+        let ask = `<div class="su-row">${btn('pick-skyrimnet', 'Choose the SkyrimNet folder&hellip;', 'primary')}</div>`;
+        return `${off}${bad}<p class="hint">Choose the folder that has it, often ${snPaths}.</p>${ask}`;
+    }
+    async function useSkyrimNetFolder(folder) {
+        await api('POST', '/api/settings', { skyrimNetFolder: folder });
+        loadTheme();
+        await runCheck(); // checked, saved and used from here on; a wrong folder comes back with its reason
     }
 
     // ---- moving between steps ----
@@ -382,6 +413,7 @@ const setupUi = (function () {
         try {
             const state = await api('POST', '/api/check', { force: true });
             if (!S || my !== S.checkToken) return; // Cancel was pressed: the check itself finishes on its own, we just stop waiting
+            S.snSearch = state.error && state.skyrimNetSearch ? state.skyrimNetSearch : null;
             if (state.error) { S.checkPane = 'ready'; S.error = state.error; render(); return; }
             S.updates = flow.countWaitingUpdates(state.rows);
             await api('POST', '/api/setup/step', { step: null });
@@ -431,9 +463,15 @@ const setupUi = (function () {
 
     async function browse(which) {
         const cur = which === 'skyrim' ? (S.skyrim && S.skyrim.path) : S[which].path;
-        const title = which === 'skyrim' ? 'Choose your Skyrim install folder' : which === 'dl' ? 'Choose where to save mod updates' : (S.manager === 'mo2' ? 'Choose your MO2 mods folder' : 'Choose your Vortex mods staging folder');
+        let modsTitle = S.manager === 'mo2' ? 'Choose your MO2 mods folder' : 'Choose your Vortex mods staging folder';
+        const title = which === 'skyrim' ? 'Choose your Skyrim install folder' : which === 'dl' ? 'Choose where to save mod updates' : modsTitle;
         const { path } = await api('POST', '/api/settings/browse-folder', { title, initialDir: cur || undefined });
         if (!path || !S) return;
+        await applyPath(which, path);
+    }
+
+    // A folder the person chose or typed: checked, and shown. Typing counts as choosing, so the Bridge never fills a box over it.
+    async function applyPath(which, path) {
         S.error = null;
         if (which === 'skyrim') {
             const r = await api('POST', '/api/setup/skyrim-check', { path });
@@ -454,6 +492,9 @@ const setupUi = (function () {
             rerun, persist: !rerun, manager: cfg.modManager === 'mo2' ? 'mo2' : 'vortex', index: 0, token: 0, checkToken: 0,
             skyrim: null, dl: null, mods: null, helperPane: 'loading', checkPane: null, updates: 0,
         };
+        S.platform = cfg.platform || 'win32';
+        S.canBrowse = cfg.canBrowse !== false;
+        flow.setPlatform(S.platform);
         S.checkOnStart = !!cfg.checkOnVortexStart;
         $('modManagerOverlay').style.display = 'flex';
         await go(step - 1);
@@ -532,7 +573,10 @@ const setupUi = (function () {
             } else if (action === 'open-vortex') {
                 try { await api('POST', '/api/open-vortex'); } catch (err) { S.error = err.message; render(); }
             } else if (action === 'open-log') await api('POST', '/api/open-log-folder');
-            else if (action === 'run-check') await runCheck();
+            else if (action === 'pick-skyrimnet') {
+                const { path } = await api('POST', '/api/settings/browse-folder', { title: 'Choose the SkyrimNet folder (the one with a config folder inside)' });
+                if (path && S) await useSkyrimNetFolder(path);
+            } else if (action === 'run-check') await runCheck();
             else if (action === 'cancel-check') { S.checkToken++; S.checkPane = 'ready'; render(); }
             else if (action === 'show-updates') close();
         } catch (err) {

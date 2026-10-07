@@ -209,9 +209,10 @@ function releaseIcon(row) {
 function linkOutOfDateWords(row) {
     const n = row.linkOutOfDate.newVersion;
     const o = row.linkOutOfDate.oldVersion;
+    let where = 'Vortex or MO2';
     return {
-        long: `The Hub lists ${n}, but its link only has ${o}. Use the mod page to download the update and install it manually in Vortex or MO2.`,
-        short: `The Hub lists ${n} but links to ${o}. Use the mod page to download the update and install manually in Vortex or MO2.`,
+        long: `The Hub lists ${n}, but its link only has ${o}. Use the mod page to download the update and install it manually in ${where}.`,
+        short: `The Hub lists ${n} but links to ${o}. Use the mod page to download the update and install manually in ${where}.`,
         hover: `Open the mod page to download version ${n} manually.`,
     };
 }
@@ -390,6 +391,8 @@ function renderRow(row) {
         </div>`;
     }
 
+    // Installed, but SkyrimNet's registry does not list it yet (its files are in an enabled mod, or a folder named for it): the one warning line.
+    if (row.notRegisteredYet) changesHtml += `<div class="req-warn">&#9888;&#65039; ${escapeHtml(row.notRegisteredYet)}</div>`;
     return `<div class="row" data-row-id="${escapeHtml(row.id)}">
         <div><div class="name">${escapeHtml(row.title)}${nsfwPill(row)}</div><div class="meta">${metaBits.join(' &middot; ') || '&nbsp;'}</div>${countsLine(row)}</div>
         <div><div class="ver"${verTitle}>${verHtml}</div>${dateHtml}</div>
@@ -666,19 +669,20 @@ function renderSetupBanner(state) {
 // ---- "Mods not installed" (queue: mods-not-installed-section): the Hub's external mod listings this PC does not have yet.
 let nexusKeySet = false;
 let currentManager = null;
+let currentPlatform = 'win32'; // the system the server runs on: the page leaves out what that system does not have
 let installingIds = new Set(); // Install pressed (or Install all running): shown as Downloading... until the row has its own state
 let installAllBusy = false;
 let installSkipNote = []; // [{ title, why }] the last Install all skipped (a note at the top of the section until the next check)
 // Whether the updater can fetch this listing by itself: a GitHub link, or a Nexus link with a Nexus key set.
 function hasDownload(row) { return row.urlKind === 'github' || (row.urlKind === 'nexus' && nexusKeySet); }
 function installableRows(rows) {
-    return (rows || []).filter((r) => r.notInstalled && r.status === 'update_available' && hasDownload(r) && !r.sameAs); // a mod ModPacer is asking about is never part of a bulk install
+    return (rows || []).filter((r) => r.notInstalled && r.status === 'update_available' && hasDownload(r) && !r.sameAs && !r.notRegisteredYet); // a mod ModPacer is asking about is never part of a bulk install
 }
 // A Hub listing whose name is close to a mod already in Vortex (lib/vortex-name-match.js): asked once, under the description.
 function sameAsLine(row) {
     if (!row.sameAs) return '';
     const off = batchRunning || installAllBusy || sameAsBusy.has(row.id) ? ' disabled' : '';
-    return `<div class="ni-same"><span class="ni-same-q">Is this the same as &ldquo;${escapeHtml(row.sameAs.vortexName)}&rdquo;, which you already have in Vortex?</span>`
+    return `<div class="ni-same"><span class="ni-same-q">Is this the same as &ldquo;${escapeHtml(row.sameAs.vortexName)}&rdquo;, which you already have in ${lastRenderedState && lastRenderedState.modManager === 'mo2' ? 'Mod Organizer 2' : 'Vortex'}?</span>`
         + `<span class="ni-same-btns"><button class="btn-muted" data-action="same-no" data-id="${escapeHtml(row.id)}"${off}>No, different</button>`
         + `<button data-action="same-yes" data-id="${escapeHtml(row.id)}"${off}>Yes, same mod</button></span></div>`;
 }
@@ -700,6 +704,7 @@ function requiresLine(row) {
     return `<div class="req-warn">&#9888;&#65039; Requires ${list}. Install ${names.length === 1 ? 'it' : 'them'} before this mod.</div>`;
 }
 function notInstalledAction(row) {
+    if (row.notRegisteredYet) return ''; // its files are already there; nothing to download, the line under the name says what to do
     const mo2 = currentManager === 'mo2';
     const idAttr = `data-id="${escapeHtml(row.id)}"`;
     const inProgress = rowState.inProgressView(row);
@@ -730,7 +735,8 @@ function renderNotInstalledRow(row) {
     const tag = row.tagline ? `<div class="tagline">${escapeHtml(row.tagline)}</div>` : '';
     const req = requiresLine(row);
     const same = sameAsLine(row);
-    const more = (tag || req || same) ? `<div class="ni-more">${tag}${req}${same}</div>` : '';
+    const reg = row.notRegisteredYet ? `<div class="req-warn">&#9888;&#65039; ${escapeHtml(row.notRegisteredYet)}</div>` : '';
+    const more = (tag || req || same || reg) ? `<div class="ni-more">${tag}${reg}${req}${same}</div>` : '';
     return `<div class="row" data-row-id="${escapeHtml(row.id)}">
         <div><div class="name">${escapeHtml(row.title)}${nsfwPill(row)}</div><div class="meta">${metaBits.join(' &middot; ') || '&nbsp;'}</div>${countsLine(row)}</div>
         <div><div class="ver">${escapeHtml(row.latestVersion || '?')}</div></div>
@@ -761,16 +767,23 @@ function notInstalledSectionHtml(state, niRows) {
 function renderSkyrimNetNotFound(search) {
     const box = $('skyrimNetNotFound');
     if (!search) { box.style.display = 'none'; box.innerHTML = ''; return; }
-    const list = (search.places || []).slice(0, 8).map((p) => `<li><code>${escapeHtml(p)}</code></li>`).join('');
-    const more = (search.places || []).length > 8 ? `<li>and ${(search.places || []).length - 8} more</li>` : '';
-    box.innerHTML = `&#9888;&#65039; ModPacer couldn't find SkyrimNet.`
-        + `<div>The folder you gave it: <code>${escapeHtml(search.given || '')}</code></div>`
-        + (search.chosenProblem ? `<div>&#9888;&#65039; The SkyrimNet folder you chose, <code>${escapeHtml(search.chosenProblem.folder)}</code>, isn't SkyrimNet's: ${escapeHtml(search.chosenProblem.why)}.</div>` : '')
-        + `<div>It looked in:</div><ul>${list}${more}</ul>`
-        + `<div>It needs a folder named <code>SkyrimNet</code> with a <code>config</code> folder inside, and either <code>content-registry.json</code> or <code>config\\SkyrimNet.yaml</code>.</div>`
-        + `<div><button data-action="pick-skyrimnet">Choose the SkyrimNet folder&hellip;</button></div>`;
+    let pickLine = `<div><button data-action="pick-skyrimnet">Choose the SkyrimNet folder&hellip;</button></div>`;
+    const off = search.switchedOff || [];
+    const offLine = off.length
+        ? `<div class="req-warn">&#9888;&#65039; Turn on <code>${escapeHtml(off[0])}</code> in Mod Organizer 2, or choose the folder below.</div>`
+          + (off.length > 1 ? `<div class="muted">Several mods: <code>${escapeHtml(off[0])}</code> and ${off.length - 1} more.</div>` : '')
+        : '';
+    let snPaths;
+    if (currentPlatform === 'win32') snPaths = '<code>overwrite\\SKSE\\Plugins\\SkyrimNet</code> or <code>Stock Game\\Data\\SKSE\\Plugins\\SkyrimNet</code>';
+    // The places it looked in are in the log (every one, with what it found there), not on the screen.
+    box.innerHTML = `&#9888;&#65039; ModPacer couldn't find <code>SkyrimNet</code>.`
+        + (search.chosenProblem ? `<div>&#9888;&#65039; That folder doesn't look like <code>SkyrimNet</code> (${escapeHtml(search.chosenProblem.why)}).</div>` : '')
+        + offLine
+        + `<div>Choose the folder that has it, often ${snPaths}.</div>`
+        + pickLine;
     box.style.display = 'block';
 }
+
 
 function renderPlugins(state) {
     appliedSeq = ++stateSeq; // anything asked for before this paint is older than it
@@ -804,6 +817,7 @@ function renderPlugins(state) {
     const niRows = allRows.filter((r) => r.notInstalled);
     nexusKeySet = !!state.nexusKeySet;
     currentManager = state.modManager;
+    currentPlatform = state.platform || 'win32';
     $('subtitle').textContent = state.lastCheckedAt
         ? `Last checked ${new Date(state.lastCheckedAt).toLocaleTimeString()} · ${rows.length} ${plural(rows.length, 'mod', 'mods')} found in your SkyrimNet install`
         : 'Not checked yet.';
@@ -1322,7 +1336,7 @@ function installSkipWhy(row) {
 async function openConfirmInstallAll() {
     if (batchRunning || installAllBusy) return;
     const state = await api('GET', '/api/state');
-    const ni = (state.rows || []).filter((r) => r.notInstalled && r.status === 'update_available' && !r.sameAs);
+    const ni = (state.rows || []).filter((r) => r.notInstalled && r.status === 'update_available' && !r.sameAs && !r.notRegisteredYet);
     const mo2 = state.modManager === 'mo2';
     const eligible = ni.filter(hasDownload);
     if (eligible.length === 0) { renderPlugins(state); return; }
@@ -1338,7 +1352,8 @@ async function openConfirmInstallAll() {
     items.push(`<li>${eligible.map((r) => escapeHtml(r.title)).join(', ')}</li>`);
     for (const r of needs) items.push(`<li>${escapeHtml(r.title)} needs ${r.requires.map(escapeHtml).join(', ')}. Install ${r.requires.length === 1 ? 'it' : 'what they require'} first.</li>`);
     for (const s of confirmInstallAll.skipped) items.push(`<li>${escapeHtml(s.title)} will not be ${mo2 ? 'downloaded' : 'installed'}: ${escapeHtml(s.why)}.</li>`);
-    $('confirmBody').innerHTML = `<div style="grid-column:1/-1"><div class="note">${mo2 ? 'They are downloaded to your downloads folder one after another. Adding them in Mod Organizer 2 is up to you.' : 'They are added to Vortex one after another. Mods with options show their options screen, and any that need a manual step are skipped and listed at the end.'}</div><ul class="confirm-list">${items.join('')}</ul></div>`;
+    let addingIn = 'Mod Organizer 2';
+    $('confirmBody').innerHTML = `<div style="grid-column:1/-1"><div class="note">${mo2 ? `They are downloaded to your downloads folder one after another. Adding them in ${addingIn} is up to you.` : 'They are added to Vortex one after another. Mods with options show their options screen, and any that need a manual step are skipped and listed at the end.'}</div><ul class="confirm-list">${items.join('')}</ul></div>`;
     $('confirmOverlay').style.display = 'flex';
 }
 async function runInstallAll(plan) {
@@ -1570,6 +1585,7 @@ async function pickOptionsClick(id) {
 // --- Settings tab ---
 async function loadSettings() {
     const cfg = await api('GET', '/api/settings');
+    applyPlatformSettings(cfg);
     applyModManagerSettings(cfg);
     $('downloadFolderInput').value = cfg.downloadFolder || '';
     $('skyrimInstallPathInput').value = cfg.skyrimInstallPath || '';
@@ -1591,7 +1607,7 @@ async function loadSettings() {
 
 // Mod Organizer 2 only: the one folder that finds the rest. A problem with it (no settings in it, another game, several setups) is the one warning line.
 function paintMo2Folder(cfg) {
-    const isMo2 = cfg.modManager === 'mo2';
+    let isMo2 = cfg.modManager === 'mo2';
     $('mo2FolderField').style.display = isMo2 ? '' : 'none';
     $('mo2FolderInput').value = cfg.mo2Folder || '';
     const warn = $('mo2FolderProblem');
@@ -1686,22 +1702,59 @@ function renderNexusKeyField(last4) {
     });
 }
 
+// Settings: on Windows the folder boxes only show the folder and Browse changes it. Both ways end in saveFolderSetting.
+let settingsPlatform = 'win32';
+var canBrowseFolders = true; // false only where there is no folder chooser (var: the not-found message above reads it)
+const FOLDER_SETTING_KEYS = { downloadFolderInput: 'downloadFolder', skyrimInstallPathInput: 'skyrimInstallPath', skyrimNetFolderInput: 'skyrimNetFolder', mo2FolderInput: 'mo2Folder', vortexStagingFolderInput: 'vortexStagingFolder' };
+function applyPlatformSettings(cfg) {
+    settingsPlatform = cfg.platform || 'win32';
+    for (const id of Object.keys(FOLDER_SETTING_KEYS)) $(id).readOnly = true; // the boxes only show the folder
+}
+// A folder typed or chosen for one setting. Where it is typed it is checked first (the same words as the setup); a problem shows under the box and nothing is saved.
+function folderWarnBox(input) {
+    const row = input.parentElement;
+    let box = row.parentElement.querySelector('.typed-warn');
+    if (!box) { box = document.createElement('div'); box.className = 'req-warn typed-warn'; row.insertAdjacentElement('afterend', box); }
+    return box;
+}
+async function typedFolderProblem(key, folder) {
+    if (key === 'skyrimInstallPath') {
+        const r = await api('POST', '/api/setup/skyrim-check', { path: folder });
+        return r.state === 'found' ? '' : "SkyrimSE.exe isn't in that folder. Make sure you pick the main game folder.";
+    }
+    if (key === 'downloadFolder' || key === 'vortexStagingFolder') {
+        const r = await api('POST', '/api/setup/folder-check', { path: folder, kind: key === 'downloadFolder' ? 'downloads' : 'mods' });
+        return window.setupFlow.folderProblemText(r.problem);
+    }
+    return '';
+}
+async function saveFolderSetting(input, path) {
+    const key = FOLDER_SETTING_KEYS[input.id];
+    input.value = path;
+    const saved = await api('POST', '/api/settings', { [key]: path });
+    if (key === 'mo2Folder' || key === 'skyrimInstallPath' || key === 'vortexStagingFolder') await loadSettings(); // the server may have filled in the other folders
+    else if (saved) paintMo2Folder(saved);
+    // Every one of these three folders is something a Plugins-tab row depends on (queue:
+    // plugins-tab-notice-saved-settings, 2026-09-30) -- refresh unconditionally, not just for
+    // the Skyrim folder as before.
+    refreshState();
+    if (key === 'skyrimInstallPath' || key === 'skyrimNetFolder' || key === 'mo2Folder') loadTheme();
+    if (key === 'skyrimNetFolder' || key === 'mo2Folder') { try { renderPlugins(await api('POST', '/api/check', { force: false })); } catch { /* the next check shows it */ } }
+}
 document.querySelectorAll('[data-browse]').forEach((btn) => {
     btn.addEventListener('click', async () => {
         const input = $(btn.dataset.browse);
         const { path } = await api('POST', '/api/settings/browse-folder', { title: btn.dataset.title, initialDir: input.value || undefined });
         if (!path) return;
-        input.value = path;
-        const key = { downloadFolderInput: 'downloadFolder', skyrimInstallPathInput: 'skyrimInstallPath', skyrimNetFolderInput: 'skyrimNetFolder', mo2FolderInput: 'mo2Folder', vortexStagingFolderInput: 'vortexStagingFolder' }[input.id];
-        const saved = await api('POST', '/api/settings', { [key]: path });
-        if (key === 'mo2Folder' || key === 'skyrimInstallPath' || key === 'vortexStagingFolder') await loadSettings(); // the server may have filled in the other folders
-        else if (saved) paintMo2Folder(saved);
-        // Every one of these three folders is something a Plugins-tab row depends on (queue:
-        // plugins-tab-notice-saved-settings, 2026-09-30) -- refresh unconditionally, not just for
-        // the Skyrim folder as before.
-        refreshState();
-        if (key === 'skyrimInstallPath' || key === 'skyrimNetFolder' || key === 'mo2Folder') loadTheme();
-        if (key === 'skyrimNetFolder' || key === 'mo2Folder') { try { renderPlugins(await api('POST', '/api/check', { force: false })); } catch { /* the next check shows it */ } }
+        await saveFolderSetting(input, path);
+    });
+});
+Object.keys(FOLDER_SETTING_KEYS).forEach((id) => {
+    $(id).addEventListener('change', async () => {
+        if (settingsPlatform === 'win32') return; // on Windows the boxes are read-only; only Browse changes them
+        const typed = $(id).value.trim();
+        if (!typed) return;
+        await saveFolderSetting($(id), typed);
     });
 });
 
