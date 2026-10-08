@@ -70,11 +70,6 @@
       <div class="inline"><input type="text" id="downloadFolderInput" readonly><button data-browse="downloadFolderInput" data-title="Choose where to save mod updates">Browse&hellip;</button></div>
     </div>
 
-    <div class="field" id="oldVersionsField">
-      <div class="label">Old versions</div>
-      <label class="toggle"><span class="sw" id="deleteOldDownloadToggle"></span><span><b>Delete the old download after a successful update</b><br><span class="muted">Off: the old download stays in your Downloads folder.</span></span></label>
-    </div>
-
     <div class="field" id="mo2FolderField" style="display:none">
       <div class="label">Your Mod Organizer 2 folder <span class="muted">(the one with <code>ModOrganizer.exe</code>)</span></div>
       <div class="inline"><input type="text" id="mo2FolderInput" readonly><button data-browse="mo2FolderInput" data-title="Choose your Mod Organizer 2 folder (the one with ModOrganizer.exe)">Browse&hellip;</button></div>
@@ -113,28 +108,18 @@
     <div class="field">
       <div class="label">Nexus API key (Premium members)</div>
       <div id="nexusKeyField"></div>
-      <p class="hint">If you have Nexus Premium, mods hosted on Nexus can download automatically too. Find your key on Nexus under <b>Site preferences &rarr; API keys</b>. Without Premium, you'll get a link to the mod's Nexus page instead.</p>
+      <p class="hint">If you have Nexus Premium, mods hosted on Nexus can download automatically too. Find your key on <a href="https://www.nexusmods.com/" target="_blank" rel="noopener noreferrer">Nexus Mods</a> &gt; Account &gt; Site preferences &gt; API Keys. Scroll to the bottom to view your key. Without Premium, you'll get a link to the mod's Nexus page instead.</p>
     </div>
 
-    <div class="field" id="notInstalledSettings">
-      <div class="label">Mods not installed</div>
-      <label class="toggle"><span class="sw off" id="showAdultToggle"></span><span><b>Show adult (NSFW) mods in Mods not installed</b><br><span class="muted">Mods you already have installed always show.</span></span></label>
+    <div class="field" id="optionsField">
+      <div class="label">Options</div>
+      <label class="toggle"><span class="sw off" id="showAdultToggle"></span><span><b>Show adult (NSFW) mods</b></span></label>
+      <label class="toggle" id="deleteOldLabel"><span class="sw" id="deleteOldDownloadToggle"></span><span><b>Automatically remove previous version after update</b></span></label>
+      <div style="display:flex;align-items:center;gap:10px"><label class="toggle" style="flex:1"><span class="sw" id="keepLogToggle"></span><span><b>Enable logging</b></span></label><button class="su-muted" id="openLogFolderBtn">Open log folder</button></div>
+      <label class="toggle"><span class="sw" id="tellNewModPacerToggle"></span><span><b>Notify when ModPacer updates are available</b></span></label>
+      <label class="toggle" id="checkOnVortexStartLabel"><span class="sw" id="checkOnVortexStartToggle"></span><span><b>Check when Vortex starts</b></span></label>
+      <label class="toggle"><span class="sw" id="autoDownloadToggle"></span><span><b>Download updates automatically</b></span></label>
     </div>
-
-    <div class="field" id="pluginsPageSettings">
-      <div class="label">Plugins page</div>
-      <label class="toggle"><span class="sw" id="tellHubToggle"></span><span><b>Tell the plugins page when I install or update a mod</b><br><span class="muted">Authors see their download counts. Only the mod's name and version are sent, nothing about you.</span></span></label>
-    </div>
-
-    <div class="field" id="keepLogField">
-      <div class="label">Log</div>
-      <label class="toggle"><span class="sw" id="keepLogToggle"></span><span><b>Keep a log</b><br><span class="muted">Helps us fix problems. Turn it off and ModPacer stops writing to it.</span></span></label>
-    </div>
-
-    <label class="toggle"><span class="sw" id="tellNewModPacerToggle"></span><span><b>Tell me when a new ModPacer is out</b></span></label>
-    <label class="toggle" id="checkOnVortexStartLabel"><span class="sw" id="checkOnVortexStartToggle"></span><span><b>Check when Vortex starts</b><br><span class="muted">Runs quietly in the background and lets you know when there's something new.</span></span></label>
-    <label class="toggle"><span class="sw" id="autoDownloadToggle"></span><span><b>Download updates automatically</b><br><span class="muted">Turn this on and ModPacer downloads updates by itself.</span></span></label>
-    <div class="field" style="display:flex;justify-content:flex-end"><button class="su-muted" id="openLogFolderBtn">Open log folder</button><button class="su-muted" id="runSetupAgainBtn">Run setup again</button></div>
   </div>
 
   <div class="card" id="moreFromMe"></div>
@@ -142,7 +127,6 @@
 
 <div id="modManagerOverlay" class="overlay" style="display:none">
   <div class="card su-modal" role="dialog" aria-labelledby="suTitle">
-    <button class="su-link su-close" id="suCloseBtn" style="display:none">Close</button>
     <div class="su-stepper" id="suStepper"></div>
     <div id="suBody"></div>
   </div>

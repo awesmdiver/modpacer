@@ -8,7 +8,8 @@
     const LEAD = "Free tools for a smoother modded Skyrim. Here's the set.";
     const THIS_TOOL = 'modpacer'; // the card with this id gets the accent border and the "You're here" tag
 
-    // `url: null` would show a card with no link (for a tool whose page isn't public yet).
+    // `url: null` would show a card with no link (for a tool whose page isn't public yet). `linkLabel` is the link's words (no label: "GitHub").
+    // The two SkyrimNet tools link to their plugins page so the author gets the credit there; Vortex Collection Tools is not a SkyrimNet plugin.
     const TOOLS = [
         {
             id: 'vortex-collection-tools',
@@ -20,13 +21,15 @@
             id: 'skyrimnet-multiproxy',
             name: 'SkyrimNet MultiProxy',
             description: 'Cloud or Local. Paid or Free. Any AI, Straight to SkyrimNet.',
-            url: 'https://github.com/awesmdiver/skyrimnet-multiproxy',
+            url: 'https://fateless.ai/plugins/awesmdiver/skyrimnet-multiproxy',
+            linkLabel: 'Plugins page',
         },
         {
             id: 'modpacer',
             name: 'ModPacer',
             description: 'Automatic version checking and downloads for SkyrimNet Hub add-ons.',
-            url: 'https://github.com/awesmdiver/modpacer',
+            url: 'https://fateless.ai/plugins/awesmdiver/modpacer',
+            linkLabel: 'Plugins page',
         },
     ];
 
@@ -45,7 +48,7 @@
     function render() {
         const cards = TOOLS.map((t) => {
             const here = t.id === THIS_TOOL;
-            const link = t.url ? `<a class="mfm-gh" href="${esc(t.url)}" target="_blank" rel="noopener noreferrer">GitHub ↗</a>` : '<span></span>';
+            const link = t.url ? `<a class="mfm-gh" href="${esc(t.url)}" target="_blank" rel="noopener noreferrer">${esc(t.linkLabel || 'GitHub')} ↗</a>` : '<span></span>';
             return `<div class="mfm-tool${here ? ' mfm-here' : ''}" data-tool="${esc(t.id)}">`
                 + `<div class="mfm-name">${esc(t.name)}</div>`
                 + `<div class="mfm-desc">${esc(t.description)}</div>`

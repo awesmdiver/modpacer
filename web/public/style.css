@@ -316,6 +316,7 @@ button:disabled, button.primary:disabled { background:var(--panel); border-color
 .su-status { display:flex; gap:8px; align-items:center; font-size:0.88rem; margin:8px 0 0 }
 .su-status.su-top { margin-top:14px; align-items:flex-start } .su-status.su-top .su-dot { margin-top:7px }
 .su-status.su-gap { margin:0 0 18px }
+.su-status.su-top.su-gap { margin:14px 0 18px }
 .su-dot { width:9px; height:9px; border-radius:50%; flex:none; background:var(--status-info) }
 .su-dot.ok { background:var(--status-success) } .su-dot.warn { background:var(--status-warning) } .su-dot.info { background:var(--status-info) }
 .su-dot.err { background:var(--status-error); animation:su-pulse 1.6s ease-in-out infinite }
@@ -325,7 +326,9 @@ button:disabled, button.primary:disabled { background:var(--panel); border-color
 button.su-link { background:none; border:0; color:var(--muted); font-size:0.85rem; padding:0 6px; margin-right:6px }
 button.su-link:hover { filter:none; color:var(--text); text-decoration:underline }
 .su-nav > span:first-child button.su-link { margin-right:0; padding-left:0 }
-.su-close { position:absolute; top:14px; right:20px; margin:0 }
+/* a link inside a sentence is plain inline text: no padding, no margin, the sentence's own font, the page's text-link colour */
+button.su-link.su-inline, .su-list button.su-link { display:inline; padding:0; margin:0; border:0; background:none; font:inherit; color:var(--accent-text); text-decoration:none; cursor:pointer }
+button.su-link.su-inline:hover, .su-list button.su-link:hover { color:var(--accent-text); text-decoration:underline; filter:none }
 button.su-muted { background:none; color:var(--muted) }
 .su-big { font-size:1.02rem; margin:0 }
 .su-bar { height:6px; border-radius:3px; background:var(--line); overflow:hidden; margin:12px 0 }

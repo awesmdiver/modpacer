@@ -60,7 +60,9 @@
         const last = where === 'page' ? 'Click <b>Check now</b> on the Mods page.' : 'Click <b>Check again</b> here.';
         return '<ol class="su-list"><li>Open Vortex, then <b>Home</b>, then <b>Extensions</b>.</li>'
             + (installed ? `<li>${BRIDGE_REMOVE_STEP}</li>` : '')
-            + '<li>Drag <code>vortex-bridge.zip</code> onto the <b>Drop File(s)</b> box.</li>'
+            + (where === 'setup'
+                ? '<li>Get the <button class="su-link" data-su="open-zip">Vortex Bridge</button>, then drag <code>vortex-bridge.zip</code> onto the <b>Drop File(s)</b> box.</li>' // the link opens the folder that holds the zip (the old footer button did)
+                : '<li>Drag <code>vortex-bridge.zip</code> onto the <b>Drop File(s)</b> box.</li>')
             + '<li>Restart Vortex if it asks.</li>'
             + `<li>${last}</li></ol>`;
     }
@@ -92,9 +94,13 @@
         return count === 1 ? 'Check complete: 1 update is waiting.' : `Check complete: ${count} updates are waiting.`;
     }
 
-    // Rows that count as "an update is waiting" -- the same set the Mods page calls Updates.
+    // "An update is waiting": a mod found in the SkyrimNet install (never a Hub listing under Mods not installed, which also carry the status
+    // update_available) with one of these statuses. The Mods page's Updates section and tile use this same test, so the two numbers cannot drift.
+    function isWaitingUpdate(r) {
+        return !r.notInstalled && ['update_available', 'queued', 'downloading', 'downloaded'].includes(r.status);
+    }
     function countWaitingUpdates(rows) {
-        return (rows || []).filter((r) => ['update_available', 'queued', 'downloading', 'downloaded'].includes(r.status)).length;
+        return (rows || []).filter(isWaitingUpdate).length;
     }
 
     // The main page's line when setup was left unfinished.
@@ -134,7 +140,7 @@
         return (!state.dl.path && !state.touched.dl) || (!state.mods.path && !state.touched.mods);
     }
 
-    const api = { setPlatform, FOLDERS_POLL_MS, foldersNote, foldersFill, foldersPollWanted, stepKinds, stepNames, nextLabel, helperEntryPane, helperCheckPane, BRIDGE_MISSING, BRIDGE_OUTDATED, BRIDGE_UNREACHABLE, bridgeNewerText, bridgeStepsHtml, createRestartWatcher, summaryLine, completionText, countWaitingUpdates, unfinishedText, folderProblemText };
+    const api = { setPlatform, FOLDERS_POLL_MS, foldersNote, foldersFill, foldersPollWanted, stepKinds, stepNames, nextLabel, helperEntryPane, helperCheckPane, BRIDGE_MISSING, BRIDGE_OUTDATED, BRIDGE_UNREACHABLE, bridgeNewerText, bridgeStepsHtml, createRestartWatcher, summaryLine, completionText, isWaitingUpdate, countWaitingUpdates, unfinishedText, folderProblemText };
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
     else root.setupFlow = api;
 })(typeof window !== 'undefined' ? window : globalThis);

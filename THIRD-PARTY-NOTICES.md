@@ -94,7 +94,7 @@ The **SkyrimNet Plugin Hub** catalog (<https://github.com/MinLL/SkyrimNet-Plugin
 The tool downloads it at run time to learn each mod's latest version; none of it is bundled or redistributed.
 
 The Hub's own catalog file (`index.json`, the same data with each mod's download and endorsement counts) and its download counter (<https://fateless.ai>, the Plugin Hub API) are by the SkyrimNet team
-and fateless.ai. When the player installs or updates a mod, or opens its page, the tool tells that counter the mod's name and version, so the author's counts are right; Settings has a switch to turn that off.
+and fateless.ai. When the player installs or updates a mod, or opens its page, the tool tells that counter the mod's name (its id on the Hub), so the author's counts are right. This is always on, the same as visiting that page yourself.
 
 ## The fateless.ai icon
 

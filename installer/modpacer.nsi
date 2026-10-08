@@ -75,6 +75,7 @@ Var OptShown    ; 1 = the person saw the Options page (so an unticked box means 
 Var SmDir
 Var DeskDir
 Var RunKey
+Var PtrDir      ; the folder of the pointer file install-info.json (%APPDATA%\ModPacer, or a scratch one in a test)
 Var OptStartMenu
 Var OptDesktop
 Var OptAutostart
@@ -124,7 +125,9 @@ Page custom OptionsPageCreate OptionsPageLeave
     StrCpy $DeskDir "$DESKTOP"
     StrCpy $RunKey "${MP_RUNKEY}"
     StrCpy $Entries 1
+    StrCpy $PtrDir "$APPDATA\ModPacer"
     ${If} $TESTROOT != ""
+        StrCpy $PtrDir "$TESTROOT\AppData\ModPacer" ; a test never reaches the real %APPDATA%
         StrCpy $Entries 0
         ${GetOptions} $R0 "/TESTREG=" $TESTREG
         ${IfNot} ${Errors}
@@ -368,10 +371,21 @@ Section "Uninstall"
             Delete "$INSTDIR\pending-deploy.json"
             Delete "$INSTDIR\pending-old-copies.json"
             Delete "$INSTDIR\install-info.json"
+            Delete "$INSTDIR\tray-notice-shown" ; the tray program's "first start" flag (launcher: NoticeFlagName)
             RMDir /r "$INSTDIR\cache"
             RMDir /r "$INSTDIR\logs"
             RMDir /r "$INSTDIR\pending-updates"
             Delete "$INSTDIR\${MP_MARKER}"
+            ; The pointer Vortex's helper reads (%APPDATA%\ModPacer\install-info.json): ModPacer's own, so it goes with a full uninstall,
+            ; but only when it names THIS folder: another install's pointer is never touched.
+            ${If} ${FileExists} "$PtrDir\install-info.json"
+                nsExec::Exec `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "try { $$j = Get-Content -Raw -LiteralPath '$PtrDir\install-info.json' | ConvertFrom-Json; if ($$j.installPath.TrimEnd('\') -eq '$INSTDIR'.TrimEnd('\')) { exit 0 } } catch { }; exit 1"`
+                Pop $0
+                ${If} $0 == 0
+                    Delete "$PtrDir\install-info.json"
+                    RMDir "$PtrDir" ; only when empty
+                ${EndIf}
+            ${EndIf}
         ${Else}
             MessageBox MB_ICONEXCLAMATION|MB_OK "Your ModPacer settings were not deleted, because ModPacer didn't create this folder:$\r$\n$INSTDIR" /SD IDOK
         ${EndIf}

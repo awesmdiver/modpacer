@@ -81,6 +81,8 @@ document.querySelectorAll('.tab').forEach((tab) => {
         // never need a Check now just to show up here; switching back is itself the signal to look
         // again. Cheap and idempotent even when nothing changed.
         if (tab.dataset.tab === 'main') refreshState();
+        // Settings: read everything again, so a folder setup just saved (or any change made elsewhere) and the Bridge line are never stale.
+        if (tab.dataset.tab === 'settings') refreshSettingsFromServer();
     });
 });
 
@@ -785,9 +787,17 @@ function renderSkyrimNetNotFound(search) {
 }
 
 
+// The SkyrimNet folder box is an override and stays empty while ModPacer finds SkyrimNet by itself; its grey placeholder says where it found it.
+function paintSkyrimNetFound() {
+    const el = $('skyrimNetFolderInput');
+    if (!el) return;
+    const dir = lastRenderedState && lastRenderedState.skyrimNetDir;
+    el.placeholder = !el.value && dir ? `Found automatically: ${dir}` : '';
+}
 function renderPlugins(state) {
     appliedSeq = ++stateSeq; // anything asked for before this paint is older than it
     lastRenderedState = state;
+    paintSkyrimNetFound();
     liveProgress = state.updateProgress || {};
     renderDeployLine(state);
     downloadFolderMissing = !!state.downloadFolderMissing;
@@ -822,7 +832,7 @@ function renderPlugins(state) {
         ? `Last checked ${new Date(state.lastCheckedAt).toLocaleTimeString()} · ${rows.length} ${plural(rows.length, 'mod', 'mods')} found in your SkyrimNet install`
         : 'Not checked yet.';
 
-    const updates = rowState.sortGroup(rows.filter((r) => r.status === 'update_available' || r.status === 'queued' || r.status === 'downloading' || r.status === 'downloaded'), 'updates');
+    const updates = rowState.sortGroup(rows.filter(window.setupFlow.isWaitingUpdate), 'updates');
     const needsYou = rowState.sortGroup(rows.filter((r) => r.status === 'needs_you'), 'needsYou');
     const upToDate = rowState.sortGroup(rows.filter((r) => r.status === 'up_to_date' || r.status === 'unknown_version' || r.status === 'updated' || r.status === 'deployed'), 'upToDate');
     const notOnHub = rowState.sortGroup(rows.filter((r) => r.status === 'not_on_hub'), 'notOnHub');
@@ -1583,25 +1593,42 @@ async function pickOptionsClick(id) {
 }
 
 // --- Settings tab ---
+// A folder box is refreshed from the server unless the person has typed in it (or is in it right now): what they typed is never overwritten.
+// `settingsBoxShown` is the value each box last got from the server.
+const settingsBoxShown = {};
+function fillSettingsBox(id, value) {
+    const el = $(id);
+    if (!el) return;
+    if (el.value === value) { settingsBoxShown[id] = value; return; }
+    if (id in settingsBoxShown && (el.value !== settingsBoxShown[id] || document.activeElement === el)) return;
+    el.value = value;
+    settingsBoxShown[id] = value;
+}
+// Everything the Settings tab reads, read again: for Vortex the Bridge first (so its line is current), then the settings. Used when setup ends and every time Settings is opened.
+async function refreshSettingsFromServer() {
+    try { await api('GET', '/api/setup/helper-status'); } catch { /* not Vortex, or not answering: the settings still load */ }
+    try { await loadSettings(); } catch { /* the page keeps what it shows */ }
+}
 async function loadSettings() {
     const cfg = await api('GET', '/api/settings');
     applyPlatformSettings(cfg);
     applyModManagerSettings(cfg);
-    $('downloadFolderInput').value = cfg.downloadFolder || '';
-    $('skyrimInstallPathInput').value = cfg.skyrimInstallPath || '';
+    fillSettingsBox('downloadFolderInput', cfg.downloadFolder || '');
+    fillSettingsBox('skyrimInstallPathInput', cfg.skyrimInstallPath || '');
     paintMo2Folder(cfg);
-    $('skyrimNetFolderInput').value = cfg.skyrimNetFolder || '';
-    $('vortexStagingFolderInput').value = cfg.vortexStagingFolder || '';
+    fillSettingsBox('skyrimNetFolderInput', cfg.skyrimNetFolder || '');
+    paintSkyrimNetFound();
+    fillSettingsBox('vortexStagingFolderInput', cfg.vortexStagingFolder || '');
     $('checkOnVortexStartToggle').classList.toggle('off', !cfg.checkOnVortexStart);
     $('autoDownloadToggle').classList.toggle('off', !cfg.autoDownload);
     $('showAdultToggle').classList.toggle('off', !cfg.showAdultNotInstalled);
-    $('tellHubToggle').classList.toggle('off', cfg.tellHubOnInstall === false);
     $('tellNewModPacerToggle').classList.toggle('off', cfg.tellNewModPacer === false);
     $('keepLogToggle').classList.toggle('off', cfg.keepLog === false);
     adultConfirmed = !!cfg.adultConfirmed;
     $('deleteOldDownloadToggle').classList.toggle('off', !cfg.deleteOldDownloadAfterUpdate);
     $('skyrimInstallStatus').textContent = cfg.skyrimInstallPath ? '' : '';
-    renderNexusKeyField(cfg.nexusApiKeyLast4 || null);
+    const typingKey = $('nexusApiKeyInput') && ($('nexusApiKeyInput').value !== '' || document.activeElement === $('nexusApiKeyInput'));
+    if (!typingKey) renderNexusKeyField(cfg.nexusApiKeyLast4 || null);
     return cfg;
 }
 
@@ -1609,7 +1636,7 @@ async function loadSettings() {
 function paintMo2Folder(cfg) {
     let isMo2 = cfg.modManager === 'mo2';
     $('mo2FolderField').style.display = isMo2 ? '' : 'none';
-    $('mo2FolderInput').value = cfg.mo2Folder || '';
+    fillSettingsBox('mo2FolderInput', cfg.mo2Folder || '');
     const warn = $('mo2FolderProblem');
     warn.style.display = isMo2 && cfg.mo2Problem ? '' : 'none';
     warn.innerHTML = isMo2 && cfg.mo2Problem ? `&#9888;&#65039; ${escapeHtml(cfg.mo2Problem)}` : '';
@@ -1773,14 +1800,14 @@ function wireToggle(el, settingKey) {
 // The adult switch: turning it ON asks "Are you 18 or older?" the first time (the answer Yes is remembered on this PC); No leaves it off
 // and asks again next time. Turning it off never asks. Only here: nothing else on the page can turn adult listings on.
 let adultConfirmed = false;
-$('showAdultToggle').addEventListener('click', async () => {
+// -> whether the switch ends up on. Setup's Final options step calls this too, so both places ask the same question the same way.
+async function setAdultSetting(turnOn) {
     const el = $('showAdultToggle');
-    const turningOn = el.classList.contains('off');
-    if (!turningOn) {
+    if (!turnOn) {
         el.classList.add('off');
         await api('POST', '/api/settings', { showAdultNotInstalled: false });
         refreshState();
-        return;
+        return false;
     }
     if (!adultConfirmed) {
         const yes = await new Promise((resolve) => {
@@ -1789,7 +1816,7 @@ $('showAdultToggle').addEventListener('click', async () => {
             $('adultYesBtn').onclick = () => done(true);
             $('adultNoBtn').onclick = () => done(false);
         });
-        if (!yes) return; // the switch stays off
+        if (!yes) return false; // the switch stays off
         adultConfirmed = true;
         el.classList.remove('off');
         await api('POST', '/api/settings', { showAdultNotInstalled: true, adultConfirmed: true });
@@ -1798,10 +1825,11 @@ $('showAdultToggle').addEventListener('click', async () => {
         await api('POST', '/api/settings', { showAdultNotInstalled: true });
     }
     refreshState();
-});
+    return true;
+}
+$('showAdultToggle').addEventListener('click', () => setAdultSetting($('showAdultToggle').classList.contains('off')));
 wireToggle($('checkOnVortexStartToggle'), 'checkOnVortexStart');
 wireToggle($('autoDownloadToggle'), 'autoDownload');
-wireToggle($('tellHubToggle'), 'tellHubOnInstall');
 wireToggle($('tellNewModPacerToggle'), 'tellNewModPacer');
 wireToggle($('keepLogToggle'), 'keepLog');
 wireToggle($('deleteOldDownloadToggle'), 'deleteOldDownloadAfterUpdate');
@@ -1837,7 +1865,7 @@ function applyModManagerSettings(cfg) {
     const manager = cfg.modManager === 'mo2' ? 'mo2' : 'vortex';
     const vortexOnly = manager === 'vortex';
     $('checkOnVortexStartLabel').style.display = vortexOnly ? '' : 'none';
-    $('oldVersionsField').style.display = vortexOnly ? '' : 'none';
+    $('deleteOldLabel').style.display = vortexOnly ? '' : 'none';
     lastSettingsCfg = vortexOnly ? cfg : null;
     renderHelperSettingsLine(cfg);
 }
@@ -1864,7 +1892,6 @@ function renderHelperSettingsLine(cfg) {
     }
 }
 
-$('runSetupAgainBtn').addEventListener('click', () => setupUi.open({ rerun: true }));
 
 // Help bubbles: hover/focus shows one, click or tap pins it open, click-away closes it.
 (function wireHelpBubbles() {

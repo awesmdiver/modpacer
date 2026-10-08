@@ -71,7 +71,7 @@ Some mods need another mod to work. If you see "Requires X. Install it before th
 
 Each mod shows its **visits** and **endorsements** from the SkyrimNet Plugin Hub. You will also see two links: **Mod page** (the mod's own page, usually GitHub) and the **fateless.ai icon** (the mod's page on fateless.ai/plugins).
 
-When you install a mod, update one, or open a mod's page from ModPacer, it pings fateless.ai so the author gets credit for the visit. **Only the mod's name and version are sent, nothing about you.** You can turn this off in **Settings** under "Tell the plugins page when I install or update a mod."
+When you install a mod, update one, or open a mod's page from ModPacer, it pings fateless.ai so the author gets credit for the visit. **Only the mod's name (its id on the Hub) is sent, nothing about you.** This is always on, the same as visiting that page yourself, and it keeps the mod authors' counts right.
 
 ## For mod authors
 
@@ -88,9 +88,9 @@ Want your mod listed? Publish it on the SkyrimNet Plugin Hub and ModPacer will f
 
 - Everything ModPacer saves lives right in its own folder. To completely remove ModPacer, just delete that folder.
 - Your Nexus key, if you add one, stays safely on your PC.
-- ModPacer keeps a small log in its own `logs` folder, with no keys in it. Turn it off any time with **Keep a log** in Settings.
+- ModPacer keeps a small log in its own `logs` folder, with no keys in it. Turn it off any time with **Enable logging** in Settings.
 - To tell you when a new ModPacer is out, it reads its own listing on the Plugin Hub, the list it already reads. Turn it off any time in **Settings**.
-- The only thing sent over the internet is the mod's name and version to fateless.ai when you install, update, or open a page (and you can turn that off).
+- The only thing sent over the internet is the mod's name (its id on the Hub) to fateless.ai when you install, update, or open a page.
 
 ## Stuck?
 

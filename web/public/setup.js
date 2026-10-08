@@ -51,7 +51,6 @@ const setupUi = (function () {
             const clickable = done && !allDone && S.checkPane !== 'checking';
             return `<div class="su-stp ${cls}"${clickable ? ` data-su="goto" data-step="${k}" role="button" tabindex="0"` : ''}><span class="n">${done ? '&#10003;' : k + 1}</span><span class="t">${escapeHtml(n)}</span></div>`;
         }).join('');
-        $('suCloseBtn').style.display = S.rerun && S.checkPane !== 'checking' ? '' : 'none';
     }
 
     function render() {
@@ -73,11 +72,10 @@ const setupUi = (function () {
     // ---- step 1: mod manager ----
     function viewManager() {
         const m = S.manager === 'mo2' ? 'mo2' : 'vortex';
-        const lock = S.rerun ? ' disabled' : ''; // already chosen: a re-run shows the answer but can't change it
         return `<h2>Which mod manager do you use?</h2><p class="hint">This tells ModPacer where your mods live and how to update them.</p>
-            <label class="choice"><input type="radio" name="suManager" value="vortex"${m === 'vortex' ? ' checked' : ''}${lock}><span><b>Vortex</b><br><span class="muted">Updates install automatically with the enclosed Vortex Bridge extension.</span></span></label>
-            <label class="choice"><input type="radio" name="suManager" value="mo2"${m === 'mo2' ? ' checked' : ''}${lock}><span><b>Mod Organizer 2</b><br><span class="muted">Updates save to your downloads folder, ready to add yourself.</span></span></label>
-            <p class="hint" style="margin:6px 0 0">${S.rerun ? 'To switch managers, start ModPacer fresh (see Help).' : 'This is a one-time choice. Switching later means reinstalling ModPacer fresh.'}</p>
+            <label class="choice"><input type="radio" name="suManager" value="vortex"${m === 'vortex' ? ' checked' : ''}><span><b>Vortex</b><br><span class="muted">Updates install automatically with the enclosed Vortex Bridge extension.</span></span></label>
+            <label class="choice"><input type="radio" name="suManager" value="mo2"${m === 'mo2' ? ' checked' : ''}><span><b>Mod Organizer 2</b><br><span class="muted">Updates save to your downloads folder, ready to add yourself.</span></span></label>
+            <p class="hint" style="margin:6px 0 0">This is a one-time choice. Switching later means reinstalling ModPacer fresh.</p>
             ${nav('', btn('next', flow.nextLabel(m, 0), 'primary'))}`;
     }
 
@@ -129,16 +127,47 @@ const setupUi = (function () {
     }
 
     // ---- step 4: options ----
+    // Every on/off setting Settings has. The label and the group heading are read from the Settings page itself (one source, so
+    // the two cannot drift); the hint lines under them stay in Settings only (director, 2026-10-07: the toggles explain themselves here). The order follows Settings; "Check when Vortex starts" is Vortex only and shares its value with the Bridge step.
+    const OPTION_TOGGLES = [
+        { group: 'optionsField', id: 'showAdultToggle', name: 'adult' },
+        { id: 'deleteOldDownloadToggle', name: 'deleteOld' },
+        { id: 'keepLogToggle', name: 'keepLog' },
+        { id: 'tellNewModPacerToggle', name: 'tellNew' },
+        { id: 'checkOnVortexStartToggle', name: 'checkstart', vortexOnly: true },
+        { id: 'autoDownloadToggle', name: 'auto' },
+    ];
+    const OPTION_KEYS = { deleteOld: 'deleteOldDownloadAfterUpdate', keepLog: 'keepLog', tellNew: 'tellNewModPacer' };
+    const optionOn = (name) => (name === 'auto' ? !!S.autoDownload : name === 'checkstart' ? !!S.checkOnStart : !!(S.opt && S.opt[name]));
+    function optionToggles() {
+        return OPTION_TOGGLES.filter((t) => !t.vortexOnly || S.manager === 'vortex').map((t) => {
+            const label = $(t.id) && $(t.id).closest('label');
+            if (!label) return '';
+            const heading = t.group && $(t.group) && $(t.group).querySelector('.label');
+            const action = t.name === 'auto' ? 'toggle-auto' : t.name === 'checkstart' ? 'toggle-checkstart' : 'toggle-opt';
+            return `${heading ? `<div class="su-lbl" style="margin-top:14px">${escapeHtml(heading.textContent.trim())}</div>` : ''}
+            <label class="toggle"><span class="sw${optionOn(t.name) ? '' : ' off'}" data-su="${action}" data-opt="${t.name}"></span><span><b>${escapeHtml(label.querySelector('b').textContent)}</b></span></label>`;
+        }).join('');
+    }
+    // The ones that save the moment they are clicked. The adult switch asks Settings' own question first and stays off on No.
+    async function toggleOption(name, el) {
+        if (name === 'adult') S.opt.adult = await setAdultSetting(!S.opt.adult);
+        else {
+            S.opt[name] = !S.opt[name];
+            await api('POST', '/api/settings', { [OPTION_KEYS[name]]: S.opt[name] });
+        }
+        if (S) el.classList.toggle('off', !S.opt[name]);
+    }
     function viewOptions() {
         const keyField = S.keyLast4
             ? `<input type="password" class="su-input" id="suKeyInput" placeholder="Saved (ends &hellip;${escapeHtml(S.keyLast4)}). Paste a new key to replace it" autocomplete="off">`
             : '<input type="password" class="su-input" id="suKeyInput" placeholder="Paste your key here, or skip" autocomplete="off">';
-        return `<h2>Final options</h2><p class="hint">These are fine as they are. You can change them later in Settings.</p>
-            <label class="toggle"><span class="sw${S.autoDownload ? '' : ' off'}" data-su="toggle-auto"></span><span><b>Download updates automatically</b><br><span class="muted">Turn this on and ModPacer downloads updates by itself.</span></span></label>
+        return `<h2>Final options</h2><p class="hint">You can change them later in Settings.</p>
+            ${optionToggles()}
             <div class="su-lbl" style="margin-top:20px">Nexus Premium key (optional)</div>
             <div class="su-row">${keyField}<button data-su="check-key" id="suKeyCheckBtn"${S.keyLast4 ? '' : ' disabled'}>Check</button></div>
+            <div class="su-note">Premium users get automatic downloads. Without it, you get a link to the mod page. Find your key on <a href="https://www.nexusmods.com/" target="_blank" rel="noopener noreferrer">Nexus Mods</a> &gt; Account &gt; Site preferences &gt; API Keys. Scroll to the bottom to view your key.</div>
             <div id="suKeyStatus">${window.nexusKeyCheck.statusHtml(S.keyState, { inline: true })}</div>
-            <div class="su-note">Premium users get automatic downloads. Without it, you get a link to the mod page. Find your key on Nexus: Site preferences &rarr; API keys.</div>
             ${nav(back(), btn('next', flow.nextLabel(S.manager, S.index), 'primary'))}`;
     }
 
@@ -151,28 +180,27 @@ const setupUi = (function () {
         const note = dot('warn', escapeHtml(OLD_HELPER_NOTE), 'su-gap-s');
         return html.includes('</h2>') ? html.replace('</h2>', () => `</h2>${note}`) : note + html;
     }
+    // One page for every state in which the person has to add vortex-bridge.zip to Vortex: missing (zip bundled), out of date, a newer one comes with
+    // ModPacer, and "not found yet" after a restart. Status line, the numbered steps (step 3 links the zip's folder), Back, Skip, Check again.
+    function viewAddZipPane(pane) {
+        const st = S.helperStatus || {};
+        const installed = !!(st.answering || st.installed);
+        const line = pane === 'bundled' ? dot('warn', escapeHtml(flow.BRIDGE_MISSING), 'su-top')
+            : pane === 'outdated' ? dot('warn', escapeHtml(flow.BRIDGE_OUTDATED), 'su-top')
+            : pane === 'newer' ? dot('info', escapeHtml(flow.bridgeNewerText(st.version, st.bundledVersion)), 'su-top')
+            : dot('err', 'We can\'t see the Vortex Bridge in Vortex. It may not be installed yet.', 'su-top');
+        const opened = S.zipOpened ? '<p class="hint" style="margin:6px 0 0">Explorer just opened with <code>vortex-bridge.zip</code> selected. Can\'t see it? Look for its flashing icon in your taskbar.</p>' : '';
+        return `<h2>Vortex Bridge</h2>
+            ${line}
+            ${flow.bridgeStepsHtml('setup', installed)}
+            ${opened}
+            ${nav(back(), link(pane === 'newer' ? 'skip-update' : 'skip-helper', 'Skip') + btn('check-again', 'Check again', 'primary', S.busy))}`;
+    }
     function viewHelperPane() {
         const pane = S.helperPane;
         if (pane === 'loading') return `<h2>Vortex Bridge</h2>${dot('info', 'One moment&hellip;')}${nav(back(), '')}`;
         const skip = link('skip-helper', 'Skip');
-        if (pane === 'bundled') {
-            return `<h2>Vortex Bridge</h2>
-                ${dot('warn', escapeHtml(flow.BRIDGE_MISSING), 'su-top')}
-                ${nav(back(), skip + btn('open-zip', 'Get the Vortex Bridge', 'primary', S.busy))}`;
-        }
-        if (pane === 'outdated') {
-            return `<h2>Vortex Bridge</h2>
-                ${dot('warn', escapeHtml(flow.BRIDGE_OUTDATED), 'su-top')}
-                ${flow.bridgeStepsHtml('setup', true)}
-                ${nav(back(), skip + btn('open-zip', 'Get the Vortex Bridge', 'primary', S.busy))}`;
-        }
-        if (pane === 'newer') {
-            const st = S.helperStatus || {};
-            return `<h2>Vortex Bridge</h2>
-                ${dot('info', escapeHtml(flow.bridgeNewerText(st.version, st.bundledVersion)), 'su-top')}
-                ${flow.bridgeStepsHtml('setup', true)}
-                ${nav(back(), link('skip-update', 'Skip') + btn('open-zip', 'Get the Vortex Bridge', 'primary', S.busy))}`;
-        }
+        if (pane === 'bundled' || pane === 'outdated' || pane === 'newer' || (pane === 'notdetected' && S.helperStatus && S.helperStatus.bundled)) return viewAddZipPane(pane);
         if (pane === 'unreachable') {
             const open = S.helperStatus && S.helperStatus.canOpen ? btn('open-vortex', 'Open Vortex for me') : '';
             return `<h2>Vortex Bridge</h2>
@@ -185,13 +213,6 @@ const setupUi = (function () {
                 ${nav(back(), skip + btn('get-helper', 'Get the Vortex Bridge', 'primary'))}`;
         }
         if (pane === 'waiting') {
-            if (S.helperVia === 'zip') {
-                return `<h2>Vortex Bridge</h2>
-                    ${dot('info', 'Explorer just opened with <code>vortex-bridge.zip</code> selected. Add it to Vortex:', 'su-top')}
-                    ${flow.bridgeStepsHtml('setup', !!(S.helperStatus && (S.helperStatus.answering || S.helperStatus.installed)))}
-                    <p class="hint" style="margin:6px 0 0">Can't see Explorer? Look for its flashing icon in your taskbar.</p>
-                    ${nav(back(), skip + btn('check-again', 'Check again', 'primary', S.busy))}`;
-            }
             return `<h2>Vortex Bridge</h2>
                 ${dot('info', 'The download page just opened in your browser. Install the Vortex Bridge in Vortex, then come back here.', 'su-top')}
                 ${nav(back(), skip + btn('check-again', 'Check again', 'primary', S.busy))}`;
@@ -205,11 +226,11 @@ const setupUi = (function () {
         if (pane === 'notdetected') {
             return `<h2>Vortex Bridge not found yet</h2><p class="hint">Vortex restarted, but the Vortex Bridge did not load.</p>
                 ${dot('err', 'We can\'t see the Vortex Bridge in Vortex. It may not be installed yet.')}
-                ${nav(back(), skip + (S.helperStatus && S.helperStatus.bundled ? btn('open-zip', 'Get the Vortex Bridge') : btn('get-helper', 'Get the Vortex Bridge')) + btn('check-again', 'Check again', 'primary', S.busy))}`;
+                ${nav(back(), skip + btn('get-helper', 'Get the Vortex Bridge') + btn('check-again', 'Check again', 'primary', S.busy))}`;
         }
-        return `<h2>Vortex Bridge ready</h2><p class="hint">Vortex loaded the Vortex Bridge, and they are talking to each other.</p>
-            ${dot('ok', S.helperStatus && S.helperStatus.version ? `Vortex Bridge ${escapeHtml(S.helperStatus.version)} installed and running.` : 'Vortex Bridge installed and running.', 'su-gap')}
-            <label class="toggle"><span class="sw${S.checkOnStart ? '' : ' off'}" data-su="toggle-checkstart"></span><span><b>Check when Vortex starts</b><br><span class="muted">Runs quietly and alerts you to new updates.</span></span></label>
+        return `<h2>Vortex Bridge ready</h2>
+            ${dot('ok', S.helperStatus && S.helperStatus.version ? `Vortex Bridge ${escapeHtml(S.helperStatus.version)} is active and connected to ModPacer.` : 'Vortex Bridge is active and connected to ModPacer.', 'su-top su-gap')}
+            <label class="toggle"><span class="sw${S.checkOnStart ? '' : ' off'}" data-su="toggle-checkstart"></span><span><b>Check when Vortex starts</b></span></label>
             ${nav(back(), btn('next', flow.nextLabel(S.manager, S.index), 'primary'))}`;
     }
 
@@ -222,7 +243,7 @@ const setupUi = (function () {
                 <div class="su-bar"><i></i></div>${nav('', btn('cancel-check', 'Cancel'))}`;
         }
         if (pane === 'done') {
-            return `<h2>You're all set!</h2><p class="hint">From now on, ModPacer opens straight to your mod list.</p>
+            return `<h2>You're all set!</h2>
                 <p class="hint" id="suHelpLine">Need help? Open the Help tab any time.</p>
                 ${dot('ok', escapeHtml(flow.completionText(S.updates)))}${nav('', btn('show-updates', 'Show my updates', 'primary'))}`;
         }
@@ -262,7 +283,6 @@ const setupUi = (function () {
 
     // ---- moving between steps ----
     async function saveStep() {
-        if (!S.persist) return;
         try { await api('POST', '/api/setup/step', { step: S.index + 1 }); } catch { /* progress is a convenience; never block the player on it */ }
     }
 
@@ -290,6 +310,8 @@ const setupUi = (function () {
                 const cfg = await api('GET', '/api/settings');
                 if (my !== S.token) return;
                 S.autoDownload = !!cfg.autoDownload;
+                S.checkOnStart = !!cfg.checkOnVortexStart;
+                S.opt = { deleteOld: !!cfg.deleteOldDownloadAfterUpdate, adult: !!cfg.showAdultNotInstalled, keepLog: cfg.keepLog !== false, tellNew: cfg.tellNewModPacer !== false };
                 S.keyLast4 = cfg.nexusApiKeyLast4 || null;
                 S.optionsLoaded = true;
                 render();
@@ -356,6 +378,7 @@ const setupUi = (function () {
 
     function setHelperPane(pane) {
         stopTimer();
+        if (S.helperPane !== pane) S.zipOpened = false;
         S.helperPane = pane;
         S.error = null;
         if (pane === 'restart') startRestartWatch();
@@ -383,7 +406,7 @@ const setupUi = (function () {
     }
 
     async function enterCheck(my) {
-        if (S.manager === 'mo2') { S.checkPane = 'ready'; render(); return; }
+        if (S.manager === 'mo2') { runCheck(); return; } // Next from Options starts the check at once: no "All set" page in between
         S.checkPane = 'loading';
         render();
         const status = await api('GET', '/api/vortex-status');
@@ -401,8 +424,9 @@ const setupUi = (function () {
     }
     function applyVortexStatus(status) {
         S.vortexCanOpen = !!(status && status.canOpen);
-        const pane = status && status.needsStart ? 'vortexclosed' : 'ready';
-        if (pane !== S.checkPane) { S.checkPane = pane; render(); }
+        if (status && status.needsStart) { if (S.checkPane !== 'vortexclosed') { S.checkPane = 'vortexclosed'; render(); } return; }
+        // Vortex is open (or was just opened): the check starts by itself
+        if (S.checkPane !== 'checking') runCheck();
     }
 
     async function runCheck() {
@@ -420,6 +444,7 @@ const setupUi = (function () {
             S.checkPane = 'done';
             render();
             refreshState();
+            refreshSettingsFromServer(); // the Settings boxes and the Bridge line show what setup just saved
         } catch (e) {
             if (!S || my !== S.checkToken) return;
             S.checkPane = 'ready';
@@ -486,10 +511,10 @@ const setupUi = (function () {
     }
 
     // ---- open / close ----
-    async function open({ rerun = false, step = 1 } = {}) {
+    async function open({ step = 1 } = {}) {
         const cfg = await api('GET', '/api/settings');
         S = {
-            rerun, persist: !rerun, manager: cfg.modManager === 'mo2' ? 'mo2' : 'vortex', index: 0, token: 0, checkToken: 0,
+            manager: cfg.modManager === 'mo2' ? 'mo2' : 'vortex', index: 0, token: 0, checkToken: 0,
             skyrim: null, dl: null, mods: null, helperPane: 'loading', checkPane: null, updates: 0,
         };
         S.platform = cfg.platform || 'win32';
@@ -504,6 +529,7 @@ const setupUi = (function () {
         S = null;
         $('modManagerOverlay').style.display = 'none';
         refreshState();
+        refreshSettingsFromServer(); // however setup ends, nothing on the page keeps pre-setup values
     }
 
     // ---- events ----
@@ -545,6 +571,7 @@ const setupUi = (function () {
             else if (action === 'browse-dl') await browse('dl');
             else if (action === 'browse-mods') await browse('mods');
             else if (action === 'check-key') await checkKey();
+            else if (action === 'toggle-opt') await toggleOption(el.dataset.opt, el);
             else if (action === 'toggle-auto') { S.autoDownload = !S.autoDownload; el.classList.toggle('off', !S.autoDownload); }
             else if (action === 'toggle-checkstart') {
                 S.checkOnStart = !S.checkOnStart;
@@ -552,17 +579,20 @@ const setupUi = (function () {
                 await api('POST', '/api/settings', { checkOnVortexStart: S.checkOnStart });
             } else if (action === 'open-zip') {
                 const r = await api('POST', '/api/setup/helper-open-zip');
-                if (!r.ok) { S.error = "Couldn't open the folder."; render(); } else { S.helperVia = 'zip'; setHelperPane('waiting'); }
+                if (!r.ok) { S.error = "Couldn't open the folder."; render(); } else { S.zipOpened = true; render(); }
             } else if (action === 'get-helper') {
                 window.open(S.helperStatus && S.helperStatus.helperDownloadUrl ? S.helperStatus.helperDownloadUrl : (await api('GET', '/api/setup/helper-status')).helperDownloadUrl, '_blank');
-                if (S.helperPane === 'notinstalled') { S.helperVia = 'link'; setHelperPane('waiting'); }
+                if (S.helperPane === 'notinstalled') setHelperPane('waiting');
             } else if (action === 'check-again') {
                 S.busy = true; render();
                 const status = await api('GET', '/api/setup/helper-status');
                 S.busy = false;
                 S.helperStatus = status;
                 // already told "not found yet" after a restart: only a Bridge that answers moves on (otherwise it would loop back to Restart Vortex)
-                setHelperPane(S.helperPane === 'notdetected' && !status.answering ? 'notdetected' : flow.helperCheckPane(status));
+                // still on the out-of-date / newer-one-comes-with-ModPacer page: the Bridge's own answer decides again (current -> ready, otherwise it stays)
+                if (S.helperPane === 'outdated' || S.helperPane === 'newer') setHelperPane(flow.helperEntryPane(status));
+                else if (S.helperPane === 'bundled') setHelperPane(status.answering ? flow.helperEntryPane(status) : flow.helperCheckPane(status));
+                else setHelperPane(S.helperPane === 'notdetected' && !status.answering ? 'notdetected' : flow.helperCheckPane(status));
             } else if (action === 'skip-update') {
                 await go(S.index + 1); // the installed Bridge works: skipping an update leaves everything as it is
             } else if (action === 'skip-helper') {
@@ -589,7 +619,6 @@ const setupUi = (function () {
     $('modManagerOverlay').addEventListener('change', (e) => {
         if (S && e.target.name === 'suManager') { S.manager = e.target.value; renderStepper(); const n = $('suBody').querySelector('[data-su="next"]'); if (n) n.textContent = flow.nextLabel(S.manager, 0); }
     });
-    $('suCloseBtn').addEventListener('click', close);
 
     return { open, close, isOpen: () => !!S };
 })();
