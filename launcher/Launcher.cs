@@ -50,10 +50,15 @@ static class Launcher
         if (port <= 0) port = 47821;
         url = "http://127.0.0.1:" + port + "/";
 
-        // One copy only: the updater already answers -> just open it.
-        if (PingIsUpdater())
+        // One copy only: the updater already answers -> just open it. When that is ANOTHER version than this one (an old copy still running after an
+        // update), the server of this install is started anyway: it cannot get the port, says so on its own page ("ModPacer is already running (version
+        // X). Quit it from the tray icon to start this copy.") and ends. Nothing is closed or taken over.
+        string running = PingVersion();
+        if (running != null)
         {
-            OpenPage();
+            string mine = OwnVersion();
+            if (mine == null || running == "?" || mine == running) { OpenPage(); return 0; }
+            TellAnotherCopyIsRunning();
             return 0;
         }
 
@@ -230,6 +235,53 @@ static class Launcher
             }
         }
         catch { }
+    }
+
+    // The version this install says it is (package.json beside server.js), or null.
+    static string OwnVersion()
+    {
+        try
+        {
+            var m = System.Text.RegularExpressions.Regex.Match(File.ReadAllText(Path.Combine(installDir, "package.json")), "\"version\"\\s*:\\s*\"([^\"]+)\"");
+            return m.Success ? m.Groups[1].Value : null;
+        }
+        catch { return null; }
+    }
+
+    // Starts this install's own server for one purpose: it finds the port taken, shows the "already running" page and ends. Not tied to the tray.
+    static void TellAnotherCopyIsRunning()
+    {
+        try
+        {
+            string nodeExe = Path.Combine(installDir, "runtime", "node.exe");
+            if (!File.Exists(nodeExe)) nodeExe = "node";
+            var psi = new ProcessStartInfo(nodeExe, "\"" + Path.Combine(installDir, "server.js") + "\"")
+            {
+                WorkingDirectory = installDir, UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden,
+            };
+            psi.EnvironmentVariables["PORT"] = port.ToString();
+            Process.Start(psi);
+        }
+        catch { OpenPage(); }
+    }
+
+    // null when nothing answers or it is not ModPacer; the version it reports ("?" when it reports none).
+    static string PingVersion()
+    {
+        try
+        {
+            var req = (HttpWebRequest)WebRequest.Create(url + "api/ping");
+            req.Timeout = 2000;
+            using (var res = req.GetResponse())
+            using (var r = new StreamReader(res.GetResponseStream()))
+            {
+                string body = r.ReadToEnd();
+                if (!body.Contains("\"modpacer\"")) return null;
+                var m = System.Text.RegularExpressions.Regex.Match(body, "\"version\"\\s*:\\s*\"([^\"]+)\"");
+                return m.Success ? m.Groups[1].Value : "?";
+            }
+        }
+        catch { return null; }
     }
 
     // ---- is the thing on our port this updater? (same question as server.js's pingExistingServer) ----

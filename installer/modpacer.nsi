@@ -106,12 +106,20 @@ Page custom OptionsPageCreate OptionsPageLeave
 !insertmacro MUI_LANGUAGE "English"
 
 ; ---- shared by the install and the uninstall: close a running ModPacer that runs from THIS folder ----
-; Only that one program: the tray program ends its own hidden Node server with it (a Windows job object, KILL_ON_JOB_CLOSE), so no other node.exe on
-; the PC is ever touched. Quiet on purpose (the "not running" case is the ordinary one).
+; Only what belongs to THIS install, identified by its full path and never by a name pattern: the tray program at $INSTDIR\ModPacer.exe and the Node
+; server at $INSTDIR\runtime\node.exe (the server normally ends with the tray program through its Windows job object, but one left behind by an
+; older start, or started by start.bat, would keep the port and the files). No other node.exe on the PC is ever touched. ModPacer has no quit route
+; to ask politely through, so both are ended directly; the script then waits up to five seconds for them to be gone. If something is still there
+; (or the check itself could not run), the person chooses Retry or Cancel, the usual way for files in use. Silent runs cancel.
 !macro StopRunningApp
-    DetailPrint "Closing ${MP_NAME} if it is running..."
-    nsExec::Exec `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Get-CimInstance Win32_Process -Filter \"Name='${MP_EXE}'\" | Where-Object { $$_.ExecutablePath -eq '$INSTDIR\${MP_EXE}' } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force }"`
+    DetailPrint "Closing ${MP_NAME}..."
+    stoptry:
+    nsExec::Exec `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$$ids = @(Get-CimInstance Win32_Process | Where-Object { $$_.ExecutablePath -and (($$_.ExecutablePath -eq '$INSTDIR\${MP_EXE}') -or ($$_.ExecutablePath -eq '$INSTDIR\runtime\node.exe')) } | ForEach-Object { $$_.ProcessId }); foreach ($$i in $$ids) { Stop-Process -Id $$i -Force -ErrorAction SilentlyContinue }; for ($$n = 0; $$n -lt 10; $$n++) { if (-not (@($$ids | Where-Object { Get-Process -Id $$_ -ErrorAction SilentlyContinue }))) { exit 0 }; Start-Sleep -Milliseconds 500 }; exit 1"`
     Pop $0
+    ${If} $0 != 0
+        MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "${MP_NAME} is still running and couldn't be closed.$\r$\n$\r$\nQuit it from its icon by the clock, then choose Retry." /SD IDCANCEL IDRETRY stoptry
+        Abort
+    ${EndIf}
     ; Process end and file release are not the same instant, and the next thing is writing or deleting the files it held.
     Sleep 1500
 !macroend

@@ -14,6 +14,11 @@
         return following && !playerScrolled;
     }
 
+    // A row already fully on screen is not scrolled to: the page only moves when the next row is out of sight.
+    function inView(rect, viewportHeight) {
+        return !!rect && rect.top >= 0 && rect.bottom <= viewportHeight;
+    }
+
     // How to scroll: centred (room above and below), smooth unless the player asked for reduced motion.
     function scrollOptions(reducedMotion) {
         return { block: 'center', behavior: reducedMotion ? 'auto' : 'smooth' };
@@ -68,7 +73,7 @@
         });
     }
 
-    const api = { followTarget, nextFollowing, scrollOptions, deployArea, batchHealth, resumeIds, hasUnfinished };
+    const api = { followTarget, nextFollowing, inView, scrollOptions, deployArea, batchHealth, resumeIds, hasUnfinished };
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
     else root.updateFollow = api;
 })(typeof window !== 'undefined' ? window : globalThis);

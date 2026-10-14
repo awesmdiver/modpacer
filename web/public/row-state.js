@@ -71,7 +71,16 @@
         return copy.sort(byName);
     }
 
-    const api = { inProgressView, waitingLine, sortGroup };
+    // The order "Update all" works through mods: exactly the order the Updates section lists them (the same sort), so the
+    // follow-along scroll only moves down. An id with no row is kept, after the rest, in the order given.
+    function screenOrder(ids, rows) {
+        const byId = new Map((rows || []).map((r) => [r.id, r]));
+        const known = [], unknown = [];
+        for (const id of ids) (byId.has(id) ? known : unknown).push(byId.get(id) || id);
+        return sortGroup(known, 'updates').map((r) => r.id).concat(unknown);
+    }
+
+    const api = { inProgressView, waitingLine, sortGroup, screenOrder };
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
     else root.rowState = api;
 })(typeof window !== 'undefined' ? window : globalThis);

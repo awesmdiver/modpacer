@@ -132,7 +132,8 @@ function buildApp() {
         // The answer never waits long on Vortex: these reads (can Update, is a deploy still needed, is a stale "isn't answering" over) run in the
         // background, and the request is answered with what is known after at most a second. While an update runs they are not started at all, so
         // the row's live state is never held behind a Vortex that is busy installing.
-        if (!engine.updateRunning()) {
+        // The page asks `?quiet=1` while its own Update all (or a single update) is running: that is also "an update is running", even in the moment between two mods.
+        if (!engine.updateRunning() && req.query.quiet !== '1') {
             const background = Promise.all([
                 engine.refreshUpdatePreviews(),
                 engine.refreshDeployNeeded(), // a deploy the person did in Vortex themselves takes the offer away
@@ -239,8 +240,9 @@ function buildApp() {
         res.json({ ok: true });
     });
 
+    // `?defer=1`: this mod is part of an Update all. It is installed now and its old copy stays until the page asks for "Removing old mods" (POST /api/update-batch/finish).
     app.post('/api/plugins/:id/update', async (req, res) => {
-        const { row, result } = await engine.updatePlugin(req.params.id);
+        const { row, result } = await engine.updatePlugin(req.params.id, { defer: req.query.defer === '1' });
         if (!row) return res.status(404).json({ error: 'Unknown mod id, or not downloaded yet.' });
         res.json({ row, result });
     });
@@ -257,6 +259,18 @@ function buildApp() {
         const result = await oldCleanup.runCleanup();
         await engine.retryOldCopies(); // the old copies (mod, archive, folder) an update could not finish removing
         res.json({ ok: true, ...result });
+    });
+
+    // The second half of an Update all: "Removing old mods" (every old mod in one removal), then the carry-over in one rules batch, for the mods whose install worked.
+    // Body: { ids }. Answers { results: { id: result }, lost: [ids], reason? }; a mod in `lost` stays installed with its old copy listed (its row says so, with Try again).
+    app.post('/api/update-batch/finish', async (req, res) => {
+        const ids = req.body && Array.isArray(req.body.ids) ? req.body.ids.filter((x) => typeof x === 'string') : [];
+        res.json(await engine.finishUpdateBatch(ids));
+    });
+
+    // The page tells the log how long an Update all took (the page is the one that runs the batch). Nothing is sent to Vortex.
+    app.post('/api/update-batch-done', (req, res) => {
+        res.json({ ok: require('./lib/update-log').logBatchSummary(req.body || {}) });
     });
 
     // Deploy: Vortex's real full deploy through the Helper (one at a time). Answers at once; the page polls /api/deploy/progress.
@@ -284,7 +298,7 @@ function buildApp() {
     });
 
     app.post('/api/plugins/:id/finish-wizard', async (req, res) => {
-        const { row, result } = await engine.finishWizard(req.params.id, (req.body && req.body.picks) || {});
+        const { row, result } = await engine.finishWizard(req.params.id, (req.body && req.body.picks) || {}, { defer: req.query.defer === '1' });
         if (!row) return res.status(404).json({ error: "No install wizard pending for this mod." });
         res.json({ row, result });
     });
@@ -661,34 +675,69 @@ async function runHeadlessCheckInner({ waitLimitMs, waitPollMs, settleLimitMs } 
 // the success callback AND the error handler, so it fires -- wrongly claiming success -- on
 // EADDRINUSE too). A short real HTTP request to the real new /api/ping route; any failure at all
 // (refused, timed out, wrong shape -- some other program entirely) reports false, never a throw.
-function pingExistingServer(port) {
+// pingModPacer answers { version } for another ModPacer, or null for anything else (the version is what that process says it is, so the person can
+// tell an old copy from this one).
+function pingModPacer(port) {
     return new Promise((resolve) => {
         const req = http.get({ host: '127.0.0.1', port, path: '/api/ping', timeout: 2000 }, (res) => {
             let body = '';
             res.on('data', (d) => { body += d; });
             res.on('end', () => {
                 try {
-                    resolve(JSON.parse(body).app === 'modpacer');
+                    const j = JSON.parse(body);
+                    resolve(j.app === 'modpacer' ? { version: typeof j.version === 'string' ? j.version.slice(0, 30) : null } : null);
                 } catch {
-                    resolve(false);
+                    resolve(null);
                 }
             });
         });
         req.on('timeout', () => req.destroy());
-        req.on('error', () => resolve(false));
+        req.on('error', () => resolve(null));
     });
 }
+async function pingExistingServer(port) { return !!(await pingModPacer(port)); }
 
 // Pure decision, no I/O or process control of its own -- safe to call directly from a test. The
-// real startup code below is the only thing that acts on what this returns.
-function describePortConflict(port, isUpdater) {
+// real startup code below is the only thing that acts on what this returns. Nothing is ever killed or taken over: the person is only told.
+function describePortConflict(port, isUpdater, version) {
     if (isUpdater) {
-        return { message: 'ModPacer is already running. Opened it in your browser.', openUrl: `http://127.0.0.1:${port}/`, exitCode: 0 };
+        const v = version ? ` (version ${version})` : '';
+        return { message: `ModPacer is already running${v}. Quit it from the tray icon to start this copy.`, openUrl: `http://127.0.0.1:${port}/`, exitCode: 0 };
     }
-    return {
-        message: `Port ${port} is already being used by something else, not ModPacer -- close it, or set a different PORT, and try again.`,
-        openUrl: null, exitCode: 1,
-    };
+    return { message: `Something else is using port ${port}.`, openUrl: null, exitCode: 1 };
+}
+
+const escapeHtmlText = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// The page the person sees when this copy could not start (the copy that holds the port can be an old one that cannot say it). A tiny server of its
+// own on a spare port of this PC, with ModPacer's own stylesheet and its one warning-line style, for a short while: it ends after `lingerMs` once the
+// page has been fetched (or a minute at most). Resolves { url, close }.
+function startNoticePage(message, runningUrl, lingerMs) {
+    const app = express();
+    app.disable('x-powered-by');
+    const pub = path.join(__dirname, 'web', 'public');
+    const page = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>ModPacer</title><link rel="icon" type="image/png" href="favicon.png"><link rel="stylesheet" href="style.css"></head><body><div class="card"><h1>ModPacer</h1><div class="req-warn">&#9888;&#65039; ${escapeHtmlText(message)}</div>${runningUrl ? `<p><a href="${escapeHtmlText(runningUrl)}">Open the copy that is running</a></p>` : ''}</div></body></html>`;
+    let fetched = false; let closeTimer = null;
+    const server = http.createServer(app);
+    app.use((req, res, next) => {
+        res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        next();
+    });
+    app.get('/', (req, res) => {
+        res.type('html').send(page);
+        if (!fetched) { fetched = true; closeTimer = setTimeout(() => server.close(), lingerMs); }
+    });
+    app.get('/style.css', (req, res) => res.sendFile(path.join(pub, 'style.css')));
+    app.get('/favicon.png', (req, res) => res.sendFile(path.join(pub, 'favicon.png')));
+    return new Promise((resolve) => {
+        server.listen(0, LISTEN_HOST, () => {
+            const url = `http://127.0.0.1:${server.address().port}/`;
+            const maxTimer = setTimeout(() => server.close(), 60000);
+            server.on('close', () => { clearTimeout(maxTimer); if (closeTimer) clearTimeout(closeTimer); });
+            resolve({ url, server, close: () => new Promise((r) => { server.close(r); server.closeAllConnections && server.closeAllConnections(); }) });
+        });
+    });
 }
 
 // The one real side effect here (a genuine new OS process) -- deliberately its own tiny function,
@@ -733,19 +782,23 @@ if (require.main === module) {
                 process.exitCode = 1;
                 return;
             }
-            const isUpdater = await pingExistingServer(PORT);
-            const outcome = describePortConflict(PORT, isUpdater);
+            const running = await pingModPacer(PORT);
+            const outcome = describePortConflict(PORT, !!running, running && running.version);
             console.log(outcome.message);
-            if (outcome.openUrl) {
-                openBrowser(outcome.openUrl);
-                // A few seconds to actually read the message before the window closes on its own
-                // (the Windows launcher only pauses on a nonzero exit code -- see its own comment).
-                setTimeout(() => process.exit(0), 3000);
-            } else {
-                process.exitCode = outcome.exitCode;
+            logArea('start', outcome.message);
+            // Nothing is closed or taken over. The page that opens says it, since the copy holding the port may be an older one that cannot.
+            try {
+                const lingerMs = Number(process.env.MODPACER_NOTICE_LINGER_MS) || 15000;
+                const notice = await startNoticePage(outcome.message, outcome.openUrl, lingerMs);
+                console.log(`Notice page: ${notice.url}`);
+                openBrowser(notice.url);
+                notice.server.on('close', () => process.exit(outcome.exitCode));
+            } catch {
+                if (outcome.openUrl) openBrowser(outcome.openUrl);
+                process.exit(outcome.exitCode);
             }
         });
     }
 }
 
-module.exports = { logStart, LISTEN_HOST, buildApp, waitForVortexReady, runHeadlessCheck, settingsPayload, startupNoticeLine, notifyHelperBestEffort, updateRowsToReport, updateNotificationMessage, pingExistingServer, describePortConflict };
+module.exports = { logStart, LISTEN_HOST, buildApp, waitForVortexReady, runHeadlessCheck, settingsPayload, startupNoticeLine, notifyHelperBestEffort, updateRowsToReport, updateNotificationMessage, pingExistingServer, pingModPacer, describePortConflict, startNoticePage };

@@ -10,6 +10,8 @@ function modpacerFetch(url, opts) {
 }
 
 async function api(method, url, body) {
+    // While an update runs the page's state reads are "quiet": the server answers from what it holds and sends Vortex nothing (no preview or deploy-needed reads between two mods).
+    if (url === '/api/state' && (batchRunning || singleUpdating)) url = '/api/state?quiet=1';
     const res = await modpacerFetch(url, {
         method, headers: body ? { 'Content-Type': 'application/json' } : undefined,
         body: body ? JSON.stringify(body) : undefined,
@@ -158,6 +160,10 @@ let batchRunning = false;
 // rows of an Update all still waiting their turn.
 let liveProgress = {};
 let batchWaiting = new Set();
+// Update all runs in two passes: every mod is installed first (its old copy stays), then "Removing old mods" removes them together and carries the rules.
+// batchDeferred = the mods installed so far whose old copy waits (their rows keep saying Updating...); removingOldMods = the second pass is running.
+let batchDeferred = new Set();
+let removingOldMods = false;
 let vortexLostNotice = false;
 let deployBusy = false; // the Deploy popup is open (hides the summary-line Deploy button meanwhile)
 // How the last deploy ended when it needs saying on the page itself: 'still_needed' | 'not_confirmed' | null (cleared when a deploy starts).
@@ -431,6 +437,11 @@ function renderVortexHelperBanner(helperState) {
             <div class="callout__title">&#9888;&#65039; ${retryStage === 'still' ? HELPER_STILL_TEXT : HELPER_BUSY_TEXT}</div>
             <div class="callout__actions"><button class="primary" data-action="retry-helper"${busy ? ' disabled' : ''}>${busy ? 'Retrying\u2026' : 'Retry'}</button></div>
         </div>`;
+    } else if (removingOldMods) {
+        $('vortexHelperBanner').innerHTML = `
+        <div class="callout callout--notice callout--plain" data-removing-old-mods>
+            <div class="callout__title">Removing old mods</div>
+        </div>`;
     } else if (pickingUp > 0) {
         $('vortexHelperBanner').innerHTML = `
         <div class="callout callout--notice callout--plain">
@@ -555,14 +566,23 @@ function groupHeader(label, groupRows, key) {
     return `<div class="group-h"${key ? ` data-group="${key}"` : ''}><span>${label}</span></div>`;
 }
 
-// ---- Expandable sections (Updates open, Up to date and Mods not installed closed): a chevron, the name, the count in brackets and the
-// section's own action right-justified. A click on the header opens or closes it; each section's choice is remembered in this browser.
-const SECTION_DEFAULTS = { updates: true, uptodate: false, notinstalled: false };
+// ---- Expandable sections: a chevron, the name, the count in brackets and the section's own action right-justified. A click on the header opens
+// or closes it. Exactly ONE section is open when the page starts, chosen once from the counts (Updates, else Up to date, else Mods not
+// installed); nothing is remembered between visits (a remembered choice is what used to leave two open). After that, only the person's own clicks
+// change what is open: a refresh never does.
+const SECTION_DEFAULTS = { updates: false, uptodate: false, notinstalled: false }; // the keys; the open one is picked by chooseStartupSection
 let sectionState = { ...SECTION_DEFAULTS };
-try { sectionState = { ...SECTION_DEFAULTS, ...JSON.parse(localStorage.getItem('sectionOpen') || '{}') }; } catch { /* the defaults */ }
+let sectionsDecided = false; // true once the start-up choice was made, or the person opened/closed something themselves
+function chooseStartupSection(updatesCount, upToDateCount, notInstalledCount) {
+    if (sectionsDecided) return;
+    const open = updatesCount > 0 ? 'updates' : upToDateCount > 0 ? 'uptodate' : notInstalledCount > 0 ? 'notinstalled' : null;
+    if (!open) return; // nothing to show yet: decide when the first rows arrive
+    sectionsDecided = true;
+    sectionState = { ...SECTION_DEFAULTS, [open]: true };
+}
 function setSectionOpen(key, open) {
+    sectionsDecided = true; // the person's own choice stands
     sectionState[key] = !!open;
-    try { localStorage.setItem('sectionOpen', JSON.stringify(sectionState)); } catch { /* remembered for this visit only */ }
     const sec = document.querySelector(`.sec[data-section="${key}"]`);
     if (sec) {
         sec.classList.toggle('open', !!open);
@@ -648,6 +668,7 @@ function followUpdating(ids) {
     if (!id) return;
     const el = document.querySelector(`[data-row-id="${CSS.escape(id)}"]`);
     if (!el || !el.scrollIntoView) return;
+    if (updateFollow.inView(el.getBoundingClientRect(), window.innerHeight)) return;
     const reduced = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
     el.scrollIntoView(updateFollow.scrollOptions(reduced));
 }
@@ -842,6 +863,7 @@ function renderPlugins(state) {
         ? `<div class="stat ${cls} go" data-action="goto-section" data-target="${target}" role="button" tabindex="0" title="${hint}"><div class="n">${n}</div><div class="l">${label}</div></div>`
         : `<div class="stat ${cls}"><div class="n">${n}</div><div class="l">${label}</div></div>`;
     const upToDateCount = upToDate.filter((r) => !r.vortexWaiting).length + notOnHub.length;
+    chooseStartupSection(updates.length, upToDate.length, niRows.length); // the same counts the section headers show
     $('summary').innerHTML = [
         tile('upd', updates.length > 0 ? 'updates' : '', 'Show the mods that have updates', updates.length, `${plural(updates.length, 'Update', 'Updates')} ready`),
         tile('nx', needsYou.length > 0 ? 'nexus' : '', 'Show the mods you need to download from Nexus', needsYou.filter((r) => !r.linkOutOfDate).length, 'Download from Nexus'),
@@ -1102,8 +1124,10 @@ function updateWorkHtml(row) {
     if (prog && prog.waiting) return `<span class="pill p-dl">${escapeHtml(workLabel(row))}</span>` + note('Waiting for Vortex…');
     if (prog || row.id === updatingId || workingIds.has(row.id)) {
         const label = workLabel(row);
-        const blocked = prog && prog.blockedBy ? note(`Vortex is waiting on you — check its window (${prog.blockedBy}) to continue.`) : '';
-        return `<span class="pill p-dl" data-update-step>${escapeHtml(label)}</span><div class="bar busy"><i></i></div>${blocked}`;
+        return `<span class="pill p-dl" data-update-step>${escapeHtml(label)}</span><div class="bar busy"><i></i></div>`;
+    }
+    if (batchDeferred.has(row.id)) { // installed, its old copy waits for the second pass: the same Updating... until the whole mod is done
+        return removingOldMods ? `<span class="pill p-dl" data-removing-old-mods-row>Removing old mods</span><div class="bar busy"><i></i></div>` : `<span class="pill p-dl" data-update-step>${escapeHtml(workLabel(row))}</span><div class="bar busy"><i></i></div>`;
     }
     if (batchWaiting.has(row.id)) return `<span class="pill p-dl">Waiting…</span>`;
     return '';
@@ -1211,6 +1235,7 @@ function lostVortex(result) {
 // answering, it stops right there, leaves the remaining rows exactly as they were, and shows the
 // "Vortex is open, but..." notice.
 async function runUpdateBatch(ids, { onStep } = {}) {
+    ids = rowState.screenOrder(ids, (lastRenderedState && lastRenderedState.rows) || []); // the order the Updates section shows, fixed for the whole batch
     batchRunning = true;
     vortexLostNotice = false;
     followBatch = true;
@@ -1218,9 +1243,14 @@ async function runUpdateBatch(ids, { onStep } = {}) {
     deployBannerDismissed = false;
     const summary = { attempted: ids.length, updated: [], skipped: [], titles: [], lost: false };
     batchWaiting = new Set(ids);
+    batchDeferred = new Set();
+    const deferredTitles = new Map(); // id -> title, for the mods installed in pass 1
+    const batchStartedAt = Date.now();
+    let ran = 0;
     try {
         for (let i = 0; i < ids.length; i++) {
             const id = ids[i];
+            ran += 1;
             if (onStep) onStep(ids.length - i);
             updatingId = id;
             batchWaiting.delete(id);
@@ -1240,7 +1270,7 @@ async function runUpdateBatch(ids, { onStep } = {}) {
                         if (w.outcome === 'finished' || w.outcome === 'lost') { reply = w.reply; break; }
                         needsScreen = false; // it turned out not to be a FOMOD: a plain update
                     }
-                    reply = await api('POST', `/api/plugins/${encodeURIComponent(id)}/update`);
+                    reply = await api('POST', `/api/plugins/${encodeURIComponent(id)}/update?defer=1`);
                     if (reply && reply.result && reply.result.reason === 'fomod_mismatch' && !needsScreen) { needsScreen = true; continue; }
                     break;
                 }
@@ -1257,12 +1287,36 @@ async function runUpdateBatch(ids, { onStep } = {}) {
             if (lostVortex(reply && reply.result)) {
                 vortexLostNotice = true; summary.lost = true;
                 retryStage = 'idle';
-                leftover = { ids: ids.slice(i) }; // this one (in flight) first, then the rest, in order
+                leftover = { ids: [...deferredTitles.keys(), ...ids.slice(i)] }; // the mods already installed (their old copy still waits), then this one (in flight), then the rest, in order
                 break;
+            }
+            if (reply && reply.result && reply.result.ok && reply.result.deferred) {
+                // Installed; its old copy is removed with all the others in the second pass.
+                batchDeferred.add(id); deferredTitles.set(id, (reply.row && reply.row.title) || id);
+                try { renderPlugins(await api('GET', '/api/state')); } catch { /* the final refresh below covers it */ }
+                continue;
             }
             if (reply && reply.result && reply.result.ok) { summary.updated.push(id); summary.titles.push((reply.row && reply.row.title) || id); }
             // Fresh rows (this one is now updated, or shows its own error) before the next one starts.
             try { renderPlugins(await api('GET', '/api/state')); } catch { /* the final refresh below covers it */ }
+        }
+        // PASS 2 AND 3: "Removing old mods" (one removal for every old mod), then the carry-over for all of them. Not when Vortex stopped answering: the mods stay installed with their old
+        // copy listed, and Retry (or each row's Try again) finishes them.
+        if (batchDeferred.size > 0 && !summary.lost) {
+            const finishIds = [...batchDeferred];
+            updatingId = null;
+            removingOldMods = true;
+            if (lastRenderedState) renderPlugins(lastRenderedState);
+            let fin = null;
+            try { fin = await api('POST', '/api/update-batch/finish', { ids: finishIds }); }
+            catch (err) { $('topError').style.display = 'block'; $('topError').textContent = err.message; }
+            finally { removingOldMods = false; }
+            for (const id of finishIds) {
+                const r = fin && fin.results && fin.results[id];
+                if (r && r.ok) { summary.updated.push(id); summary.titles.push(deferredTitles.get(id) || id); }
+            }
+            const lostIds = fin && Array.isArray(fin.lost) ? fin.lost : [];
+            if (lostIds.length > 0) { vortexLostNotice = true; summary.lost = true; retryStage = 'idle'; leftover = { ids: lostIds }; }
         }
         if (!summary.lost && summary.updated.length > 0) batchOutcome = { attempted: summary.attempted, updated: summary.updated.length, ids: ids.slice(), skippedIds: summary.skipped.slice() };
     } finally {
@@ -1270,6 +1324,10 @@ async function runUpdateBatch(ids, { onStep } = {}) {
         followBatch = false;
         updatingId = null;
         batchWaiting = new Set();
+        batchDeferred = new Set();
+        removingOldMods = false;
+        // The log gets one line for the whole batch (how many mods, how long). A local note only: it asks Vortex nothing.
+        api('POST', '/api/update-batch-done', { attempted: ran, updated: summary.updated.length, ms: Date.now() - batchStartedAt }).catch(() => {});
         await refreshState();
     }
     if (summary.updated.length > 0) await checkOldDownloads();
@@ -1563,7 +1621,7 @@ async function openWizard(id, { batch = false } = {}) {
                 if (!batch) { singleUpdating = true; if (lastRenderedState) renderDeployLine(lastRenderedState); }
                 let outcome;
                 try {
-                    const done = await api('POST', `/api/plugins/${encodeURIComponent(id)}/finish-wizard`, { picks });
+                    const done = await api('POST', `/api/plugins/${encodeURIComponent(id)}/finish-wizard${batch ? '?defer=1' : ''}`, { picks });
                     outcome = { outcome: lostVortex(done && done.result) ? 'lost' : 'finished', reply: done };
                 } catch (err) {
                     outcome = { outcome: 'error', error: err.message };
