@@ -188,6 +188,18 @@ function buildApp() {
         }
     });
 
+    // Exclude / Include again (Mods not installed). Both answer with the new state, so the page redraws at once.
+    app.post('/api/plugins/:id/exclude', (req, res) => {
+        const r = engine.excludeMod(req.params.id);
+        if (!r.ok) return res.status(r.status).json({ error: r.error });
+        res.json(engine.getState());
+    });
+    app.post('/api/plugins/:id/include', (req, res) => {
+        const r = engine.includeMod(req.params.id);
+        if (!r.ok) return res.status(r.status).json({ error: r.error });
+        res.json(engine.getState());
+    });
+
     // A click through to a mod's own page (the Mod page arrow, Open on Nexus): counted on the plugins page, in the background. The page has
     // already opened the link; this never delays or blocks anything.
     // "This mod is currently disabled. Do you want to enable it or keep it disabled?": which of these mods are off in Vortex right now, and the answer.

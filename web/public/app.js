@@ -710,6 +710,21 @@ function sameAsLine(row) {
         + `<button data-action="same-yes" data-id="${escapeHtml(row.id)}"${off}>Yes, same mod</button></span></div>`;
 }
 const sameAsBusy = new Set();
+// Exclude (Mods not installed row) and Include again (Settings): saved at once, no message; the page redraws from the answer.
+async function excludeOrInclude(what, id) {
+    let state = null;
+    try { state = await api('POST', `/api/plugins/${encodeURIComponent(id)}/${what}`); } catch { state = null; }
+    if (!state) { try { state = await api('GET', '/api/state'); } catch { state = null; } }
+    if (state) renderPlugins(state);
+    try { await loadSettings(); } catch { /* the list is read again the next time Settings opens */ }
+}
+function paintExcludedMods(list) {
+    const items = Array.isArray(list) ? list : [];
+    $('excludedLabel').textContent = `Excluded mods (${items.length})`;
+    $('excludedList').innerHTML = items.length === 0
+        ? '<p class="hint">Nothing is excluded. Use Exclude on a mod\'s row to leave it alone.</p>'
+        : items.map((e) => `<div style="display:flex;align-items:center;gap:10px;margin:6px 0"><span style="flex:1;min-width:0"><b>${escapeHtml(e.title || e.id)}</b>${e.author ? ` <span class="muted">${escapeHtml(e.author)}</span>` : ''}</span><button class="su-muted" data-action="include-mod" data-id="${escapeHtml(e.id)}">Include again</button></div>`).join('');
+}
 async function answerSameAs(id, answer) {
     if (sameAsBusy.has(id)) return;
     sameAsBusy.add(id);
@@ -763,7 +778,7 @@ function renderNotInstalledRow(row) {
     return `<div class="row" data-row-id="${escapeHtml(row.id)}">
         <div><div class="name">${escapeHtml(row.title)}${nsfwPill(row)}</div><div class="meta">${metaBits.join(' &middot; ') || '&nbsp;'}</div>${countsLine(row)}</div>
         <div><div class="ver">${escapeHtml(row.latestVersion || '?')}</div></div>
-        <div class="right">${rowIconsHtml(row)}${notInstalledAction(row)}</div>
+        <div class="right">${rowIconsHtml(row)}${notInstalledAction(row)}<button class="su-link" data-action="exclude-mod" data-id="${escapeHtml(row.id)}">Exclude</button></div>
         ${more}${err}
     </div>`;
 }
@@ -1045,6 +1060,9 @@ document.addEventListener('click', async (e) => {
     } else if (action === 'same-yes' || action === 'same-no') {
         e.preventDefault();
         await answerSameAs(el.dataset.id, action === 'same-yes' ? 'yes' : 'no');
+    } else if (action === 'exclude-mod' || action === 'include-mod') {
+        e.preventDefault();
+        await excludeOrInclude(action === 'exclude-mod' ? 'exclude' : 'include', el.dataset.id);
     } else if (action === 'install-new') {
         e.preventDefault();
         await installNewClick(el.dataset.id);
@@ -1680,6 +1698,7 @@ async function loadSettings() {
     $('checkOnVortexStartToggle').classList.toggle('off', !cfg.checkOnVortexStart);
     $('autoDownloadToggle').classList.toggle('off', !cfg.autoDownload);
     $('showAdultToggle').classList.toggle('off', !cfg.showAdultNotInstalled);
+    paintExcludedMods(cfg.excludedMods);
     $('tellNewModPacerToggle').classList.toggle('off', cfg.tellNewModPacer === false);
     $('keepLogToggle').classList.toggle('off', cfg.keepLog === false);
     adultConfirmed = !!cfg.adultConfirmed;
