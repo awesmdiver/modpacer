@@ -976,7 +976,7 @@ $('downloadAllBtn').addEventListener('click', async () => {
     dropLeftover();
     const state = await api('GET', '/api/state');
     const pending = (state.rows || []).filter((r) => r.status === 'update_available' && !r.notInstalled); // the not-installed listings have their own Install
-    await Promise.all(pending.map((r) => api('POST', `/api/plugins/${encodeURIComponent(r.id)}/download`)));
+    await Promise.all(pending.map((r) => api('POST', `/api/plugins/${encodeURIComponent(r.id)}/download`, { how: 'download-all' })));
     refreshState();
 });
 
@@ -1403,7 +1403,7 @@ async function installNewClick(id) {
     dropLeftover();
     installingIds.add(id);
     if (lastRenderedState) renderPlugins(lastRenderedState);
-    try { await api('POST', `/api/plugins/${encodeURIComponent(id)}/download`); } catch { /* the row shows its own error */ }
+    try { await api('POST', `/api/plugins/${encodeURIComponent(id)}/download`, { how: 'install' }); } catch { /* the row shows its own error */ }
     let state;
     try { state = await api('GET', '/api/state'); } catch { state = null; }
     installingIds.delete(id);
@@ -1448,7 +1448,7 @@ async function runInstallAll(plan) {
     installSkipNote = plan.skipped.map((s) => ({ title: s.title, why: s.why }));
     plan.ids.forEach((id) => installingIds.add(id));
     if (lastRenderedState) renderPlugins(lastRenderedState);
-    try { await Promise.all(plan.ids.map((id) => api('POST', `/api/plugins/${encodeURIComponent(id)}/download`).catch(() => null))); } catch { /* each row shows its own error */ }
+    try { await Promise.all(plan.ids.map((id) => api('POST', `/api/plugins/${encodeURIComponent(id)}/download`, { how: 'install-all' }).catch(() => null))); } catch { /* each row shows its own error */ }
     let state;
     try { state = await api('GET', '/api/state'); } catch { state = null; }
     plan.ids.forEach((id) => installingIds.delete(id));

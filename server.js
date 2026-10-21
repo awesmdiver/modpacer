@@ -169,7 +169,7 @@ function buildApp() {
     });
 
     app.post('/api/plugins/:id/download', async (req, res) => {
-        const row = await engine.downloadPlugin(req.params.id, { userAsked: true }); // only the auto-download omits this
+        const row = await engine.downloadPlugin(req.params.id, { userAsked: true, how: require('./lib/download-log').HOWS[req.body && req.body.how] ? req.body.how : 'button' }); // only the auto-download omits this
         if (!row) return res.status(404).json({ error: 'Unknown mod id.' });
         res.json(row);
     });
