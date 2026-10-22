@@ -164,6 +164,9 @@ let batchWaiting = new Set();
 // batchDeferred = the mods installed so far whose old copy waits (their rows keep saying Updating...); removingOldMods = the second pass is running.
 let batchDeferred = new Set();
 let removingOldMods = false;
+let waitingForVortex = false; // an Update all is waiting for a busy Vortex to answer (between two installs)
+// What the last Update all left in Vortex, for the one amber line under the summary: { installed, silent } (silent = Vortex was not answering). Shown only while old copies are still there.
+let batchLeftNote = null;
 let vortexLostNotice = false;
 let deployBusy = false; // the Deploy popup is open (hides the summary-line Deploy button meanwhile)
 // How the last deploy ended when it needs saying on the page itself: 'still_needed' | 'not_confirmed' | null (cleared when a deploy starts).
@@ -430,17 +433,20 @@ function renderDownloadFolderBanner(missing) {
 const HELPER_BUSY_TEXT = "Vortex is open, but the Vortex Bridge isn't answering. Vortex may be busy. Press Retry to try again.";
 const HELPER_STILL_TEXT = 'Still no answer. Vortex may still be busy. Try again in a moment.';
 function renderVortexHelperBanner(helperState) {
-    if (helperState === 'vortex_running_helper_unreachable') {
+    // While an Update all removes old mods or waits for a busy Vortex, its own line says so (the Retry banner would offer a second path while the first is still waiting).
+    const batchLine = removingOldMods || waitingForVortex;
+    if (helperState === 'vortex_running_helper_unreachable' && !batchLine) {
         const busy = retryStage === 'busy';
         $('vortexHelperBanner').innerHTML = `
         <div class="callout callout--warning callout--plain">
             <div class="callout__title">&#9888;&#65039; ${retryStage === 'still' ? HELPER_STILL_TEXT : HELPER_BUSY_TEXT}</div>
-            <div class="callout__actions"><button class="primary" data-action="retry-helper"${busy ? ' disabled' : ''}>${busy ? 'Retrying\u2026' : 'Retry'}</button></div>
+            <div class="callout__actions"><button class="primary" data-action="retry-helper"${busy ? ' disabled' : ''}>${busy ? 'Retrying…' : 'Retry'}</button></div>
         </div>`;
-    } else if (removingOldMods) {
+    } else if (batchLine) {
+        const waiting = waitingForVortex || Object.values(liveProgress).some((p) => p && p.waiting);
         $('vortexHelperBanner').innerHTML = `
         <div class="callout callout--notice callout--plain" data-removing-old-mods>
-            <div class="callout__title">Removing old mods</div>
+            <div class="callout__title">${waiting ? 'Waiting for Vortex…' : 'Removing old mods'}</div>
         </div>`;
     } else if (pickingUp > 0) {
         $('vortexHelperBanner').innerHTML = `
@@ -623,6 +629,41 @@ function renderDeployLine(state) {
     renderSelfUpdateLine(state);
     renderDeployLineInner(state);
     if (deployNotice && !deployBusy) $('deployLine').insertAdjacentHTML('afterbegin', deployNoticeHtml());
+    const older = leftoverLineHtml(state);
+    if (older) $('deployLine').insertAdjacentHTML('afterbegin', older);
+    const left = oldCopiesNoteText(state);
+    if (left) $('deployLine').insertAdjacentHTML('afterbegin', `<div class="req-warn" data-old-copies-note style="margin-top:12px">&#9888;&#65039; ${escapeHtml(left)}</div>`);
+}
+// Older versions of an add-on still in Vortex that ModPacer has no note about (state.leftoverOlder): the one amber line and the one button. Never removed by themselves.
+function leftoverLineHtml(state) {
+    const list = (state && state.leftoverOlder) || [];
+    if (list.length === 0 || batchRunning || singleUpdating) return '';
+    const n = list.length;
+    const text = `Vortex still has ${n} older ${n === 1 ? 'copy' : 'copies'} of your add-ons.`;
+    return `<div class="inline" style="align-items:center;justify-content:space-between;gap:12px;margin-top:12px"><span class="req-warn" data-leftover-note>&#9888;&#65039; ${escapeHtml(text)}</span><button data-action="remove-old-versions">Remove old versions</button></div>`;
+}
+const OLDER_TITLE = 'Remove old versions?';
+let confirmOlderIds = null; // set while the confirm box is for "Remove old versions"
+function openConfirmOlderVersions() {
+    const list = (lastRenderedState && lastRenderedState.leftoverOlder) || [];
+    if (list.length === 0) return;
+    confirmPluginId = null; confirmBatchIds = null; confirmInstallAll = null;
+    confirmOlderIds = list.map((x) => x.id);
+    $('confirmTitle').textContent = OLDER_TITLE;
+    $('confirmUpdateBtn').textContent = 'Remove';
+    $('confirmBody').innerHTML = `<div style="grid-column:1/-1"><div class="note">We'll remove these older copies from Vortex. The newer versions stay.</div><ul class="confirm-list"><li>${list.map((x) => escapeHtml(`${x.title} ${x.version}`)).join(', ')}</li></ul></div>`;
+    $('confirmOverlay').style.display = 'flex';
+}
+// The one line after an Update all that installed mods whose old copies are still in Vortex. It goes away by itself once none is left (no row says so any more). Plain: no "Bridge", no steps.
+function oldCopiesNoteText(state) {
+    if (!batchLeftNote || batchRunning) return '';
+    const n = ((state && state.rows) || []).filter((r) => r.oldCopyLeft).length;
+    if (n === 0) { batchLeftNote = null; return ''; }
+    const own = n === 1 ? 'old copy is' : 'old copies are';
+    const them = n === 1 ? 'it' : 'them';
+    return batchLeftNote.silent
+        ? `${batchLeftNote.installed} installed. ${n} ${own} still in Vortex because Vortex didn't answer. We'll remove ${them} when it does.`
+        : `${batchLeftNote.installed} installed. ${n} ${own} still in Vortex. We'll remove ${them} at the next check.`;
 }
 
 function renderDeployLineInner(state) {
@@ -1112,6 +1153,9 @@ document.addEventListener('click', async (e) => {
         e.preventDefault();
         const pending = ((lastRenderedState && lastRenderedState.pendingDeploy) || []);
         await askDeploy({ ids: pending.map((p) => p.pluginId), titles: pending.map((p) => p.title), allOk: true, skipAsk: true });
+    } else if (action === 'remove-old-versions') {
+        e.preventDefault();
+        openConfirmOlderVersions();
     } else if (action === 'deploy-not-yet') {
         e.preventDefault();
         deployBannerDismissed = true;
@@ -1263,6 +1307,9 @@ async function runUpdateBatch(ids, { onStep } = {}) {
     batchWaiting = new Set(ids);
     batchDeferred = new Set();
     const deferredTitles = new Map(); // id -> title, for the mods installed in pass 1
+    const waitedFor = new Set(); // mods that already waited once for a silent Vortex
+    let oldLeftCount = 0, fullyDone = 0; // for the log's one line: old copies still in Vortex, mods finished completely
+    batchLeftNote = null;
     const batchStartedAt = Date.now();
     let ran = 0;
     try {
@@ -1302,6 +1349,16 @@ async function runUpdateBatch(ids, { onStep } = {}) {
                 try { renderPlugins(await api('GET', '/api/state')); } catch { /* the final refresh below covers it */ }
                 continue;
             }
+            if (lostVortex(reply && reply.result) && !waitedFor.has(id) && reply.result.reason !== 'vortex_not_running' && reply.result.reason !== 'helper_not_installed') {
+                // Vortex is most likely just busy with the installs before this one: wait for it (up to about five minutes), then give this mod one more go. Nothing was sent for it yet.
+                waitedFor.add(id);
+                waitingForVortex = true;
+                if (lastRenderedState) renderPlugins(lastRenderedState);
+                let back = null;
+                try { back = await api('POST', '/api/update-batch/wait-for-vortex'); } catch { back = null; }
+                waitingForVortex = false;
+                if (back && back.connected) { i -= 1; ran -= 1; continue; }
+            }
             if (lostVortex(reply && reply.result)) {
                 vortexLostNotice = true; summary.lost = true;
                 retryStage = 'idle';
@@ -1314,13 +1371,14 @@ async function runUpdateBatch(ids, { onStep } = {}) {
                 try { renderPlugins(await api('GET', '/api/state')); } catch { /* the final refresh below covers it */ }
                 continue;
             }
-            if (reply && reply.result && reply.result.ok) { summary.updated.push(id); summary.titles.push((reply.row && reply.row.title) || id); }
+            if (reply && reply.result && reply.result.ok) { summary.updated.push(id); summary.titles.push((reply.row && reply.row.title) || id); fullyDone += 1; }
             // Fresh rows (this one is now updated, or shows its own error) before the next one starts.
             try { renderPlugins(await api('GET', '/api/state')); } catch { /* the final refresh below covers it */ }
         }
-        // PASS 2 AND 3: "Removing old mods" (one removal for every old mod), then the carry-over for all of them. Not when Vortex stopped answering: the mods stay installed with their old
-        // copy listed, and Retry (or each row's Try again) finishes them.
-        if (batchDeferred.size > 0 && !summary.lost) {
+        // PASS 2 AND 3: "Removing old mods" (one removal for every old mod), then the carry-over for all of them. ALWAYS once the installs are done, whatever the last mod did: the mods
+        // already installed must not be left with their old copy. The server waits for a busy Vortex (about five minutes) before it gives up; what it could not finish stays listed and
+        // is finished by itself the next time Vortex answers (a check, Check now), or by Retry / each row's Try again.
+        if (batchDeferred.size > 0) {
             const finishIds = [...batchDeferred];
             updatingId = null;
             removingOldMods = true;
@@ -1329,12 +1387,19 @@ async function runUpdateBatch(ids, { onStep } = {}) {
             try { fin = await api('POST', '/api/update-batch/finish', { ids: finishIds }); }
             catch (err) { $('topError').style.display = 'block'; $('topError').textContent = err.message; }
             finally { removingOldMods = false; }
+            const finished = new Set();
             for (const id of finishIds) {
                 const r = fin && fin.results && fin.results[id];
                 if (r && r.ok) { summary.updated.push(id); summary.titles.push(deferredTitles.get(id) || id); }
+                if (r && r.ok && r.oldCopy && r.oldCopy.complete) { finished.add(id); fullyDone += 1; }
             }
+            oldLeftCount = finishIds.length - finished.size;
             const lostIds = fin && Array.isArray(fin.lost) ? fin.lost : [];
-            if (lostIds.length > 0) { vortexLostNotice = true; summary.lost = true; retryStage = 'idle'; leftover = { ids: lostIds }; }
+            // The Retry list: what Vortex could not be asked about, then the mods never installed. A mod installed but with its old copy still there is not on it: it is finished by itself, or by its row's Try again.
+            const notInstalled = ((leftover && leftover.ids) || []).filter((x) => !finishIds.includes(x));
+            if (lostIds.length > 0) { vortexLostNotice = true; summary.lost = true; retryStage = 'idle'; leftover = { ids: [...lostIds, ...notInstalled] }; }
+            else if (leftover) leftover = notInstalled.length > 0 ? { ids: notInstalled } : null;
+            if (oldLeftCount > 0) batchLeftNote = { installed: fullyDone + oldLeftCount, silent: lostIds.length > 0 || !fin };
         }
         if (!summary.lost && summary.updated.length > 0) batchOutcome = { attempted: summary.attempted, updated: summary.updated.length, ids: ids.slice(), skippedIds: summary.skipped.slice() };
     } finally {
@@ -1345,16 +1410,25 @@ async function runUpdateBatch(ids, { onStep } = {}) {
         batchDeferred = new Set();
         removingOldMods = false;
         // The log gets one line for the whole batch (how many mods, how long). A local note only: it asks Vortex nothing.
-        api('POST', '/api/update-batch-done', { attempted: ran, updated: summary.updated.length, ms: Date.now() - batchStartedAt }).catch(() => {});
+        // `updated` = mods finished completely, `installed` = mods whose new version is in Vortex, `oldLeft` = of those, old copies still there (the log says so instead of "(0 updated)").
+        api('POST', '/api/update-batch-done', { attempted: ran, updated: fullyDone, installed: fullyDone + oldLeftCount, oldLeft: oldLeftCount, ms: Date.now() - batchStartedAt }).catch(() => {});
         await refreshState();
     }
     if (summary.updated.length > 0) await checkOldDownloads();
     return summary;
 }
 
-$('confirmCancelBtn').addEventListener('click', () => { $('confirmOverlay').style.display = 'none'; confirmBatchIds = null; confirmInstallAll = null; });
+$('confirmCancelBtn').addEventListener('click', () => { $('confirmOverlay').style.display = 'none'; confirmBatchIds = null; confirmInstallAll = null; confirmOlderIds = null; });
 $('confirmUpdateBtn').addEventListener('click', async () => {
     $('confirmOverlay').style.display = 'none';
+    const olderIds = confirmOlderIds && $('confirmTitle').textContent === OLDER_TITLE ? confirmOlderIds : null; // (another confirm opened since would have changed the title)
+    confirmOlderIds = null;
+    if (olderIds) {
+        const ids = olderIds;
+        try { await api('POST', '/api/leftover/remove', { ids }); } catch (err) { $('topError').style.display = 'block'; $('topError').textContent = err.message; }
+        await refreshState();
+        return;
+    }
     if (confirmInstallAll) {
         const plan = confirmInstallAll;
         confirmInstallAll = null;

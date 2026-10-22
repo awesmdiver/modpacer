@@ -277,11 +277,26 @@ function buildApp() {
     // Body: { ids }. Answers { results: { id: result }, lost: [ids], reason? }; a mod in `lost` stays installed with its old copy listed (its row says so, with Try again).
     app.post('/api/update-batch/finish', async (req, res) => {
         const ids = req.body && Array.isArray(req.body.ids) ? req.body.ids.filter((x) => typeof x === 'string') : [];
-        res.json(await engine.finishUpdateBatch(ids));
+        res.json(await engine.finishUpdateBatch(ids, { patient: true })); // Vortex is busy right after the installs: this waits for it (about five minutes at most)
+    });
+
+    // Update all, a mod lost Vortex in the middle of its installs: the page asks to wait for it (about five minutes at most) before trying that mod once more.
+    // Answers { connected, state }. Nothing is sent to Vortex but the status question.
+    app.post('/api/update-batch/wait-for-vortex', async (req, res) => {
+        const state = await require('./lib/vortex-update').waitForVortexAnswer();
+        res.json({ connected: state === 'connected', state });
+    });
+
+    // Remove old versions: the older copies of an add-on that ModPacer listed (and has no note about). Body: { ids } = Vortex mod ids; only ids the check itself lists are removed.
+    app.post('/api/leftover/remove', async (req, res) => {
+        const ids = req.body && Array.isArray(req.body.ids) ? req.body.ids.filter((x) => typeof x === 'string') : [];
+        res.json(await engine.removeOlderVersions(ids));
     });
 
     // The page tells the log how long an Update all took (the page is the one that runs the batch). Nothing is sent to Vortex.
     app.post('/api/update-batch-done', (req, res) => {
+        engine.closeBatch();
+        engine.runLeftoverCheck('after an Update all'); // in the background; the mod list is the one already held
         res.json({ ok: require('./lib/update-log').logBatchSummary(req.body || {}) });
     });
 
@@ -756,7 +771,10 @@ function startNoticePage(message, runningUrl, lingerMs) {
 // never exercised for real in tests, same reasoning as lib/open-download-folder.js's own spawn.
 function openBrowser(url) {
     if (process.env.MODPACER_NO_BROWSER) return; // tests and release dry runs never pop a browser
-    require('child_process').exec(`start "" "${url}"`);
+    // The browser is the window; the command line that starts it is not (a hidden program starting cmd without "no window" made a console flash).
+    const child = require('./lib/run-hidden').spawn('cmd.exe', ['/d', '/s', '/c', `start "" "${url}"`], { detached: true, stdio: 'ignore', windowsVerbatimArguments: true });
+    child.on('error', () => { /* no browser to open: the address is printed */ });
+    child.unref();
 }
 
 if (require.main === module) {
