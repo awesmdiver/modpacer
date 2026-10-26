@@ -521,6 +521,80 @@ function setPluginEnabledAction(api, pluginName, enabled) {
     api.store.dispatch({ type: 'SET_PLUGIN_ENABLED', payload: { pluginName, enabled } });
 }
 
+// Vortex's Settings > Health Check (Beta) switches, kept in state.persistent.healthCheck (source:
+// extensions/health_check/ -- selectors.ts isModRequirementsEnabled / isFileRequirementsUserEnabled,
+// reducers/persistent.ts, actions/persistent.ts; read 2026-10-23). The selectors fall back to `true`
+// for a missing value, so this does too. No `persistent.healthCheck` at all means this Vortex has no
+// Health Check extension (its reducer registers the key with defaults), so nothing is read or written.
+// The two actions are createAction()s with types.disableChecking(), so a plain {type, payload} object is
+// the same action (same pattern as setPluginEnabledAction above).
+function getHealthCheckSettings(api) {
+    const state = api.store.getState();
+    const hc = state.persistent && state.persistent.healthCheck;
+    if (!hc || typeof hc !== 'object') return null;
+    return {
+        modRequirementsEnabled: hc.modRequirementsEnabled ?? true,
+        fileRequirementsEnabled: hc.fileRequirementsEnabled ?? true,
+    };
+}
+
+// Points a mod at the archive (download record) it now comes from: Vortex's own SET_MOD_ARCHIVEID
+// (mod_management/actions/mods.ts setModArchiveId; reducer sets state.persistent.mods[game][mod].archiveId
+// and ignores an unknown mod). Vortex's Mods table adds a stray "downloaded" row for every finished
+// download that no mod's top-level archiveId claims (ModList.tsx updateModsWithState), and
+// set-attributes cannot reach this top-level field. Plain {type, payload} like the other routes
+// (safeCreateAction disables type checking, so the type is the bare string). Everything is checked
+// before anything is dispatched. Returns { supported:false } or { previous, current }.
+function setModArchiveIdAction(api, modId, archiveId) {
+    const bad = (status, message) => Object.assign(new Error(message), { status });
+    if (typeof modId !== 'string' || !modId || typeof archiveId !== 'string' || !archiveId) {
+        throw bad(400, 'Body must include modId and archiveId as non-empty strings.');
+    }
+    let vortexActions;
+    try { vortexActions = require('vortex-api').actions; } catch { vortexActions = null; }
+    if (!vortexActions || typeof vortexActions.setModArchiveId !== 'function') return { supported: false };
+    const mod = getAllMods(api)[modId];
+    if (!mod) throw bad(404, `No mod "${modId}" in the active game.`);
+    if (!Object.prototype.hasOwnProperty.call(getAllDownloads(api), archiveId)) {
+        throw bad(404, `No download "${archiveId}" in Vortex's downloads list.`);
+    }
+    const previous = mod.archiveId === undefined ? null : mod.archiveId;
+    if (previous !== archiveId) {
+        api.store.dispatch({ type: 'SET_MOD_ARCHIVEID', payload: { gameId: GAME_ID, modId, archiveId } });
+    }
+    const after = getAllMods(api)[modId];
+    return { previous, current: after && after.archiveId !== undefined ? after.archiveId : null };
+}
+
+// body: { modRequirementsEnabled?, fileRequirementsEnabled? }. Validates everything first so a bad
+// field never leaves half a change behind. Returns { supported:false } or { previous, current }.
+function setHealthCheckSettings(api, body) {
+    const wanted = {};
+    for (const key of ['modRequirementsEnabled', 'fileRequirementsEnabled']) {
+        if (body[key] === undefined) continue;
+        if (typeof body[key] !== 'boolean') {
+            const err = new Error(`${key} must be true or false.`);
+            err.badRequest = true;
+            throw err;
+        }
+        wanted[key] = body[key];
+    }
+    if (Object.keys(wanted).length === 0) {
+        const err = new Error('Body must include modRequirementsEnabled and/or fileRequirementsEnabled as true or false.');
+        err.badRequest = true;
+        throw err;
+    }
+    const previous = getHealthCheckSettings(api);
+    if (!previous) return { supported: false };
+    if ('modRequirementsEnabled' in wanted) {
+        api.store.dispatch({ type: 'SET_HEALTH_CHECK_MOD_REQUIREMENTS_ENABLED', payload: { enabled: wanted.modRequirementsEnabled } });
+    }
+    if ('fileRequirementsEnabled' in wanted) {
+        api.store.dispatch({ type: 'SET_HEALTH_CHECK_FILE_REQUIREMENTS_ENABLED', payload: { enabled: wanted.fileRequirementsEnabled } });
+    }
+    return { previous, current: getHealthCheckSettings(api) };
+}
+
 // Dispatches Vortex's own real ADD_MOD_RULE / REMOVE_MOD_RULE actions -- the exact action creators
 // Vortex's own built-in Conflict Editor dispatches (confirmed against its real source,
 // extensions/mod-dependency-manager/src/views/ConflictEditor.tsx's buildRuleActions: it removes the
@@ -1589,6 +1663,53 @@ function startServer(api) {
             return;
         }
 
+        // Health Check switches -- see getHealthCheckSettings / setHealthCheckSettings.
+        // Idempotent. Body { modId, archiveId }; replies { ok, previous, current } so a caller can undo it.
+        if (req.method === 'POST' && req.url === '/mods/set-archive-id') {
+            readJsonBody(req).then((body) => {
+                try {
+                    const { modId, archiveId } = body || {};
+                    const result = setModArchiveIdAction(api, modId, archiveId);
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ ok: true, ...result }));
+                } catch (err) {
+                    if (!err.status) log('error', '[vortex-bridge] /mods/set-archive-id dispatch failed', err.message);
+                    res.writeHead(err.status || 500, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: err.message }));
+                }
+            }).catch((err) => {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: `Invalid JSON body: ${err.message}` }));
+            });
+            return;
+        }
+
+        if (req.method === 'GET' && req.url === '/health-check/settings') {
+            const current = getHealthCheckSettings(api);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(current ? { ok: true, ...current } : { ok: true, supported: false }));
+            return;
+        }
+
+        // Idempotent. Replies with the previous values so a caller can restore them.
+        if (req.method === 'POST' && req.url === '/health-check/settings') {
+            readJsonBody(req).then((body) => {
+                try {
+                    const result = setHealthCheckSettings(api, body || {});
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ ok: true, ...result }));
+                } catch (err) {
+                    if (!err.badRequest) log('error', '[vortex-bridge] /health-check/settings dispatch failed', err.message);
+                    res.writeHead(err.badRequest ? 400 : 500, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: err.message }));
+                }
+            }).catch((err) => {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: `Invalid JSON body: ${err.message}` }));
+            });
+            return;
+        }
+
         // Everything a full Scan needs in one call: the whole mods subtree (same data
         // buildModIndex(db) builds from a state.v2 iteration) plus which of those mods are enabled
         // in the active profile right now -- lets vortex-collection-tools reconstruct its own
@@ -2165,7 +2286,7 @@ function startServer(api) {
         }
 
         res.writeHead(404, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Unknown route. Try GET /health, GET /rules/:modId, GET /mods, GET /downloads, GET /paths, GET /profiles, GET /plugins/:pluginName, POST /plugins/:pluginName/set-enabled, POST /rules/apply, POST /rules/apply-batch, POST /mods/set-attributes, POST /mods/deploy, POST /mods/deploy-all, GET /mods/deploy-all/progress, POST /mods/set-enabled, POST /mods/set-enabled-batch, POST /mods/remove, POST /mods/remove-record-only, POST /mods/create, POST /mods/create-batch, POST /downloads/register-local, POST /downloads/set-installed, POST /downloads/remove-record-only, POST /downloads/remove, POST /notify, or POST /plugin-updater/notify' }));
+        res.end(JSON.stringify({ error: 'Unknown route. Try GET /health, GET /rules/:modId, GET /mods, GET /downloads, GET /paths, GET /profiles, GET /plugins/:pluginName, POST /plugins/:pluginName/set-enabled, GET /health-check/settings, POST /health-check/settings, POST /rules/apply, POST /rules/apply-batch, POST /mods/set-attributes, POST /mods/set-archive-id, POST /mods/deploy, POST /mods/deploy-all, GET /mods/deploy-all/progress, POST /mods/set-enabled, POST /mods/set-enabled-batch, POST /mods/remove, POST /mods/remove-record-only, POST /mods/create, POST /mods/create-batch, POST /downloads/register-local, POST /downloads/set-installed, POST /downloads/remove-record-only, POST /downloads/remove, POST /notify, or POST /plugin-updater/notify' }));
     });
 
     server.on('error', (err) => {
@@ -2219,6 +2340,7 @@ main.__testables = {
     startServer, stopServer, PORT, checkRequestGuard,
     COMPANIONS, OLD_COPY_MESSAGE, OLD_EXTENSION_ID, notifyOldCopyInstalled, oldCopyFolderExists,
     resetOldCopyNotice: () => { oldCopyNoticeShown = false; },
+    getHealthCheckSettings, setHealthCheckSettings, setModArchiveIdAction,
     _resolveInstallPath, _resolveDownloadPath, _formatPathTemplate, removeDownloadAndFile,
 };
 

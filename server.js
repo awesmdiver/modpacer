@@ -266,6 +266,13 @@ function buildApp() {
         res.json({ row, result });
     });
 
+    // "It's <version>": tells Vortex the version of a mod it holds with none (the row's latest version), through the Bridge.
+    app.post('/api/plugins/:id/set-known-version', async (req, res) => {
+        const { row, result } = await engine.setKnownVersion(req.params.id);
+        if (!row) return res.status(404).json({ error: 'Nothing to set for this mod.' });
+        res.json({ row, result });
+    });
+
     // Checks the old downloads of updated mods are really gone (and finishes any that were left pending). Waits for the pass.
     app.post('/api/cleanup-old-downloads', async (req, res) => {
         const result = await oldCleanup.runCleanup();
@@ -325,7 +332,7 @@ function buildApp() {
     });
 
     app.post('/api/plugins/:id/finish-wizard', async (req, res) => {
-        const { row, result } = await engine.finishWizard(req.params.id, (req.body && req.body.picks) || {}, { defer: req.query.defer === '1' });
+        const { row, result } = await engine.finishWizard(req.params.id, (req.body && req.body.picks) || {}, { defer: req.query.defer === '1', again: !!(req.body && req.body.again) });
         if (!row) return res.status(404).json({ error: "No install wizard pending for this mod." });
         res.json({ row, result });
     });
@@ -343,7 +350,8 @@ function buildApp() {
     // Best-effort cleanup once the screen closes (Finish, Skip or Cancel). Always answers ok: a failed cleanup of a scratch
     // folder is never something to show the player.
     app.post('/api/fomod-image-cleanup', (req, res) => {
-        const { modId, imageCacheToken } = req.body || {};
+        const { modId, imageCacheToken, outcome } = req.body || {};
+        if (modId && (outcome === 'cancelled' || outcome === 'skipped') && engine.findRow(String(modId))) logUpdate(`[${String(modId)}] FOMOD options screen closed without installing (${outcome === 'skipped' ? 'skipped' : 'cancelled'}); nothing was changed`);
         if (modId && imageCacheToken) {
             try { fomodPickerData.releaseFomodImages(String(modId), String(imageCacheToken)); } catch { /* disk hygiene only */ }
         }

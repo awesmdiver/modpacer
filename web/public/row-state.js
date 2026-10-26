@@ -71,6 +71,21 @@
         return copy.sort(byName);
     }
 
+    // The player's own sort (queue: the-mod-list-can-be-sorted-by-name): 'az' / 'za' order the rows of one section by name; anything else
+    // leaves them as given. Case ignored, a leading "The " ignored, numbers compared as numbers ("2 Handed" before "10 Mods"), a mod with
+    // no name last in both directions. Only the name is used, so a row never moves because its status changed.
+    const collator = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
+    function nameKey(row) { return String((row && row.title) || '').trim().replace(/^the\s+/i, '').trim(); }
+    function sortByName(rows, mode) {
+        if (mode !== 'az' && mode !== 'za') return rows.slice();
+        const dir = mode === 'za' ? -1 : 1;
+        return rows.slice().sort((a, b) => {
+            const x = nameKey(a), y = nameKey(b);
+            if (!x !== !y) return x ? -1 : 1;
+            return (x ? dir * collator.compare(x, y) : 0) || String(a.id || '').localeCompare(String(b.id || ''));
+        });
+    }
+
     // The order "Update all" works through mods: exactly the order the Updates section lists them (the same sort), so the
     // follow-along scroll only moves down. An id with no row is kept, after the rest, in the order given.
     function screenOrder(ids, rows) {
@@ -80,7 +95,7 @@
         return sortGroup(known, 'updates').map((r) => r.id).concat(unknown);
     }
 
-    const api = { inProgressView, waitingLine, sortGroup, screenOrder };
+    const api = { inProgressView, waitingLine, sortGroup, sortByName, screenOrder };
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
     else root.rowState = api;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -11,6 +11,10 @@ The top of the page has four tiles. Click one to jump to its section.
 - **Up to date:** Mods that are already on the latest version.
 - **Not installed:** Mods in the catalog that you don't have yet. Click **Install** on one, or **Install all**.
 
+**Sort by:** above the list, pick **Default order**, **Name A to Z** or **Name Z to A**. It sorts inside each section, and ModPacer remembers your choice.
+
+**"Installed, but Vortex doesn't know its version":** this shows for a mod you installed by hand, because Vortex has no version for it. Click **It's <version>** to tell Vortex the version you have. After that, ModPacer can tell you when a newer one is out. Only click it if you really have that version.
+
 ## Vortex Bridge (for Vortex users)
 
 **What it is:** Vortex Bridge is a tiny add-on for Vortex. It lets ModPacer see the mods you have in Vortex and install new ones for you.

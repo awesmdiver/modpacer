@@ -246,6 +246,9 @@ button:disabled, button.primary:disabled { background:var(--panel); border-color
 .btn-muted:hover { color:var(--text); filter:none }
 
 /* Mod manager choice (queue: ask-which-mod-manager, 2026-10-01) */
+.sort-row { display:flex; justify-content:flex-end; align-items:center; gap:10px; margin:0 0 4px }
+.sort-row .seg { margin:0 }
+.sort-l { color:var(--muted); font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em }
 .seg { display:inline-flex; border:1px solid var(--line); border-radius:6px; overflow:hidden; margin:4px 0 6px }
 .seg span { padding:6px 14px; font-size:0.82rem; color:var(--muted); cursor:pointer; user-select:none }
 .seg span.on { background:var(--accent-fill); color:var(--bg) }

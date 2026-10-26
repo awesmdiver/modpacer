@@ -376,7 +376,10 @@ function renderRow(row) {
         action = `<div class="muted" style="font-size:0.75rem;text-align:right">Waiting for Vortex…</div>`;
     } else if (row.installedVersionUnknown && row.status === 'unknown_version') {
         // Vortex answered fully, and its entry for this mod has no version: say what is true (nothing is waiting).
-        action = `<div class="muted" style="font-size:0.75rem;text-align:right">Installed, but Vortex doesn't know its version</div>`;
+        // A hand-installed mod will never get one by itself, so the button tells Vortex the latest version (only a live entry, never a remembered one).
+        action = `<div class="muted" style="font-size:0.75rem;text-align:right">Installed, but Vortex doesn't know its version</div>`
+            + (row.vortexModId && row.latestVersion && !row.vortexInfoFromCache
+                ? `<button data-action="set-known-version" data-id="${escapeHtml(row.id)}"${batchRunning ? ' disabled' : ''}>It's ${escapeHtml(row.latestVersion)}</button>` : '');
     } else if (row.status === 'up_to_date' || row.status === 'unknown_version') {
         action = `<span class="pill p-ok">${row.status === 'unknown_version' ? "Can't check version" : 'Up to date'}</span>`;
     } else if (row.status === 'not_on_hub') {
@@ -494,7 +497,7 @@ async function retryHelperClick() {
     }
 }
 // Starting anything else drops the leftover list: it is never resumed silently later.
-function dropLeftover() { leftover = null; pickingUp = 0; retryStage = 'idle'; }
+function dropLeftover() { leftover = null; pickingUp = 0; retryStage = 'idle'; confirmedPicks.clear(); }
 
 // The bundled Vortex Bridge: the Mods-page banner and the Settings line share one small box. ModPacer never installs the Bridge (it never writes
 // into Vortex's folders): the button only opens Explorer on `vortex-bridge.zip`, and the numbered lines say how to add it in Vortex. Same words as the
@@ -871,6 +874,34 @@ function paintSkyrimNetFound() {
     const dir = lastRenderedState && lastRenderedState.skyrimNetDir;
     el.placeholder = !el.value && dir ? `Found automatically: ${dir}` : '';
 }
+// ---- The sort choice above the list (queue: the-mod-list-can-be-sorted-by-name): Default order / Name A to Z / Name Z to A, kept in the settings.
+let modSort = 'list', sortLoaded = false;
+const SORT_CHOICES = [['list', 'Default order'], ['az', 'Name A to Z'], ['za', 'Name Z to A']];
+function paintSortRow(show) {
+    const el = $('sortRow');
+    el.style.display = show ? '' : 'none';
+    el.querySelectorAll('[data-sort]').forEach((s) => {
+        const on = s.dataset.sort === modSort;
+        s.classList.toggle('on', on);
+        s.setAttribute('aria-pressed', String(on));
+    });
+}
+function chooseSort(mode) {
+    if (mode === modSort || !SORT_CHOICES.some((c) => c[0] === mode)) return;
+    modSort = mode;
+    sortLoaded = true;
+    if (lastRenderedState) renderPlugins(lastRenderedState); // the same rows, in the new order
+    api('POST', '/api/settings', { modListSort: mode }).catch(() => { /* the order still holds for this visit */ });
+}
+document.addEventListener('click', (e) => {
+    const s = e.target.closest ? e.target.closest('#sortRow [data-sort]') : null;
+    if (s) chooseSort(s.dataset.sort);
+});
+document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const s = e.target && e.target.closest ? e.target.closest('#sortRow [data-sort]') : null;
+    if (s && e.target === s) { e.preventDefault(); chooseSort(s.dataset.sort); }
+});
 function renderPlugins(state) {
     appliedSeq = ++stateSeq; // anything asked for before this paint is older than it
     lastRenderedState = state;
@@ -888,6 +919,7 @@ function renderPlugins(state) {
         $('topError').textContent = state.needsSetup || notFound ? '' : state.error;
         $('summary').innerHTML = '';
         $('pluginList').innerHTML = '';
+        $('sortRow').style.display = 'none';
         $('subtitle').textContent = '';
         renderDownloadFolderBanner(false);
         renderVortexHelperBanner(null);
@@ -909,10 +941,15 @@ function renderPlugins(state) {
         ? `Last checked ${new Date(state.lastCheckedAt).toLocaleTimeString()} · ${rows.length} ${plural(rows.length, 'mod', 'mods')} found in your SkyrimNet install`
         : 'Not checked yet.';
 
-    const updates = rowState.sortGroup(rows.filter(window.setupFlow.isWaitingUpdate), 'updates');
-    const needsYou = rowState.sortGroup(rows.filter((r) => r.status === 'needs_you'), 'needsYou');
-    const upToDate = rowState.sortGroup(rows.filter((r) => r.status === 'up_to_date' || r.status === 'unknown_version' || r.status === 'updated' || r.status === 'deployed'), 'upToDate');
-    const notOnHub = rowState.sortGroup(rows.filter((r) => r.status === 'not_on_hub'), 'notOnHub');
+    // The sort the player chose: the first state read sets it; after that only the player's own press changes it.
+    if (!sortLoaded) { sortLoaded = true; modSort = state.modListSort === 'az' || state.modListSort === 'za' ? state.modListSort : 'list'; }
+    const sortRows = (list, group) => (modSort === 'list' ? rowState.sortGroup(list, group) : rowState.sortByName(list, modSort));
+    const updates = sortRows(rows.filter(window.setupFlow.isWaitingUpdate), 'updates');
+    const needsYou = sortRows(rows.filter((r) => r.status === 'needs_you'), 'needsYou');
+    const upToDate = sortRows(rows.filter((r) => r.status === 'up_to_date' || r.status === 'unknown_version' || r.status === 'updated' || r.status === 'deployed'), 'upToDate');
+    const notOnHub = sortRows(rows.filter((r) => r.status === 'not_on_hub'), 'notOnHub');
+    const niSorted = modSort === 'list' ? niRows : rowState.sortByName(niRows, modSort);
+    paintSortRow(allRows.length > 0);
 
     // Every tile goes to its section (queue: every-summary-tile-goes-to-its-section); one with nothing to go to is plain, with no pointer or hover text.
     const tile = (cls, target, hint, n, label) => target
@@ -952,7 +989,7 @@ function renderPlugins(state) {
     if (needsYou.length > 0) html += groupHeader('Download from Nexus', needsYou, 'nexus') + needsYou.map(renderRow).join('');
     if (upToDate.length > 0) html += sectionHtml('uptodate', 'Up to date', String(upToDate.length), upToDate, '', upToDate.map(renderRow).join(''));
     if (notOnHub.length > 0) html += groupHeader('Not on the Hub', notOnHub, 'nothub') + notOnHub.map(renderRow).join('');
-    html += notInstalledSectionHtml(state, niRows);
+    html += notInstalledSectionHtml(state, niSorted);
     // Before the very first check, this card would otherwise just be an empty box (director, from
     // a live screenshot, 2026-09-30: "Not checked yet.", three zeros, and nothing underneath) --
     // a quiet nudge toward the one thing that actually fixes it. Never shown once a real check has
@@ -1141,6 +1178,15 @@ document.addEventListener('click', async (e) => {
         if (lostVortex(reply && reply.result)) vortexLostNotice = true;
         await refreshState();
         if (reply && reply.result && reply.result.ok) await checkOldDownloads();
+    } else if (action === 'set-known-version') {
+        e.preventDefault();
+        const setId = el.dataset.id;
+        markWorking([setId]);
+        let reply = null;
+        try { reply = await api('POST', `/api/plugins/${encodeURIComponent(setId)}/set-known-version`); }
+        finally { workingDone([setId], { render: false }); }
+        if (lostVortex(reply && reply.result)) vortexLostNotice = true;
+        await refreshState();
     } else if (action === 'retry-helper') {
         e.preventDefault();
         await retryHelperClick();
@@ -1681,12 +1727,35 @@ function askDeploy({ ids, titles, allOk, skipAsk, follow }) {
 let wizardPluginId = null;
 let wizardNeed = null;
 
-function releaseFomodImages(id, need) {
-    if (!need || !need.imageCacheToken) return;
+// The options a player confirmed for a mod whose install did not go through because Vortex was silent. A retry (Update all's own wait,
+// or Retry) installs with these and never shows the screen a second time. Dropped as soon as the install gets any other answer.
+const confirmedPicks = new Map();
+
+function releaseFomodImages(id, need, outcome) {
+    const closedWithout = outcome === 'cancelled' || outcome === 'skipped'; // the log line for a screen closed without installing
+    if (!need || (!need.imageCacheToken && !closedWithout)) return;
     modpacerFetch('/api/fomod-image-cleanup', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ modId: id, imageCacheToken: need.imageCacheToken }),
+        body: JSON.stringify({ modId: id, imageCacheToken: need.imageCacheToken, outcome }),
     }).catch(() => {});
+}
+
+// Sends the confirmed options for one mod's install (Finish, or a retry that reuses them).
+async function finishWizardPicks(id, picks, { batch, again }) {
+    if (!batch) { singleUpdating = true; if (lastRenderedState) renderDeployLine(lastRenderedState); }
+    let outcome;
+    try {
+        const done = await api('POST', `/api/plugins/${encodeURIComponent(id)}/finish-wizard${batch ? '?defer=1' : ''}`, { picks, again: again || undefined });
+        const lost = lostVortex(done && done.result);
+        if (lost) confirmedPicks.set(id, picks); else confirmedPicks.delete(id);
+        outcome = { outcome: lost ? 'lost' : 'finished', reply: done };
+    } catch (err) {
+        confirmedPicks.delete(id);
+        outcome = { outcome: 'error', error: err.message };
+    } finally {
+        if (!batch) singleUpdating = false;
+    }
+    return outcome;
 }
 
 // Opens the FOMOD screen for one mod: the new options with the old choices pre-filled, nothing installed yet. Finish
@@ -1694,6 +1763,8 @@ function releaseFomodImages(id, need) {
 // { outcome: 'finished' | 'skipped' | 'cancelled' | 'none' | 'lost' | 'error', reply?, error? }.
 //   none: the archive turned out not to be a FOMOD; lost: Vortex stopped answering.
 async function openWizard(id, { batch = false } = {}) {
+    // Already confirmed once and only Vortex's silence stopped the install: install with those options, no second screen.
+    if (confirmedPicks.has(id)) return finishWizardPicks(id, confirmedPicks.get(id), { batch, again: true });
     let reply;
     try { reply = await api('POST', `/api/plugins/${encodeURIComponent(id)}/wizard`); } catch (err) { return { outcome: 'error', error: err.message }; }
     if (lostVortex(reply && reply.result)) return { outcome: 'lost', reply };
@@ -1702,7 +1773,7 @@ async function openWizard(id, { batch = false } = {}) {
     wizardPluginId = id;
     wizardNeed = need;
     return new Promise((resolve) => {
-        const settle = (result) => { releaseFomodImages(id, need); wizardPluginId = null; wizardNeed = null; resolve(result); };
+        const settle = (result) => { releaseFomodImages(id, need, result.outcome); wizardPluginId = null; wizardNeed = null; resolve(result); };
         window.showFomodPicker(need, {
             title: `Install options — ${reply.row.title}`,
             batch,
@@ -1710,17 +1781,7 @@ async function openWizard(id, { batch = false } = {}) {
             onSkip: () => settle({ outcome: 'skipped' }),
             onDone: async (picks) => {
                 // Finish: install what the player confirmed.
-                if (!batch) { singleUpdating = true; if (lastRenderedState) renderDeployLine(lastRenderedState); }
-                let outcome;
-                try {
-                    const done = await api('POST', `/api/plugins/${encodeURIComponent(id)}/finish-wizard${batch ? '?defer=1' : ''}`, { picks });
-                    outcome = { outcome: lostVortex(done && done.result) ? 'lost' : 'finished', reply: done };
-                } catch (err) {
-                    outcome = { outcome: 'error', error: err.message };
-                } finally {
-                    if (!batch) singleUpdating = false;
-                }
-                settle(outcome);
+                settle(await finishWizardPicks(id, picks, { batch, again: false }));
             },
         });
     });
