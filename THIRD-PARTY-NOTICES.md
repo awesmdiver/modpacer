@@ -85,6 +85,8 @@ Vortex's plugins folder when the player clicks to install it. It runs inside Vor
 | `minimatch` (the same package Vortex's own code uses for file patterns) | BlueOak-1.0.0 |
 | `semver`, `inherits`, `once`, `wrappy`, `setprototypeof` | ISC |
 | `qs` | BSD-3-Clause |
+| `pngjs` ([pngjs](https://github.com/pngjs/pngjs)), shrinks mod cover pictures | MIT |
+| `jpeg-js` ([jpeg-js](https://github.com/jpeg-js/jpeg-js)), shrinks mod cover pictures | BSD-3-Clause |
 
 All of these are permissive licenses that are compatible with GPL-3.0.
 

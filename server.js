@@ -35,6 +35,8 @@ const vortexLaunch = require('./lib/vortex-launch');
 const oldCleanup = require('./lib/old-download-cleanup');
 const fomodPickerData = require('./lib/fomod-picker-data');
 const { createVortexConsoleNotes } = require('./lib/console-notes');
+const hubCovers = require('./lib/hub-covers');
+const catalogLib = require('./lib/catalog');
 
 const PORT = process.env.PORT || 47821;
 
@@ -97,6 +99,29 @@ function buildApp() {
     // else entirely?" (queue: already-running-just-open-it, 2026-10-01).
     app.get('/api/ping', (req, res) => {
         res.json({ app: 'modpacer', ok: true, version: APP_VERSION });
+    });
+
+    // A mod's cover picture and description from the Plugin Hub (queue: show-each-mods-cover-picture-and-description-from-the-hub). The page asks for
+    // these only for rows that are on screen. GET only, behind the same Host / Origin check as every route; the picture is ModPacer's own saved small
+    // copy, so the page never loads a picture from the internet. Not found / not allowed / not loadable are all just a 404 with nothing in it.
+    app.get('/api/hub-cover/:id', async (req, res) => {
+        res.setHeader('Cache-Control', 'no-store');
+        try {
+            const r = await hubCovers.getCover(catalogLib.findCachedEntry(req.params.id), appConfig.loadConfig());
+            if (!r.ok) return res.status(404).end();
+            const bytes = fs.readFileSync(r.file);
+            res.setHeader('Content-Type', r.mime);
+            res.setHeader('Cache-Control', 'private,max-age=86400');
+            res.end(bytes);
+        } catch { res.status(404).end(); }
+    });
+    app.get('/api/hub-description/:id', async (req, res) => {
+        res.setHeader('Cache-Control', 'no-store');
+        try {
+            const r = await hubCovers.getDescription(catalogLib.findCachedEntry(req.params.id));
+            if (!r.ok) return res.status(404).end();
+            res.json({ lines: r.lines });
+        } catch { res.status(404).end(); }
     });
 
     // Does the page need to ask the player to start Vortex? Only for Vortex chosen + Helper installed
@@ -270,6 +295,13 @@ function buildApp() {
     app.post('/api/plugins/:id/set-known-version', async (req, res) => {
         const { row, result } = await engine.setKnownVersion(req.params.id);
         if (!row) return res.status(404).json({ error: 'Nothing to set for this mod.' });
+        res.json({ row, result });
+    });
+
+    // "Update" on a mod whose version Vortex does not know, or "Update anyway" on one the player said the version of: the row becomes a normal update.
+    app.post('/api/plugins/:id/update-anyway', async (req, res) => {
+        const { row, result } = await engine.updateAnyway(req.params.id);
+        if (!row) return res.status(404).json({ error: 'Nothing to update for this mod.' });
         res.json({ row, result });
     });
 

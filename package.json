@@ -1,6 +1,6 @@
 {
   "name": "modpacer",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "private": true,
   "license": "GPL-3.0-only",
   "description": "Easily install new mods and keep them on pace with updates.",
@@ -14,7 +14,9 @@
   "dependencies": {
     "express": "^5.2.1",
     "fast-xml-parser": "^5.10.1",
+    "jpeg-js": "0.4.4",
     "minimatch": "^10.2.6",
+    "pngjs": "7.0.0",
     "semver": "^7.8.5"
   },
   "devDependencies": {

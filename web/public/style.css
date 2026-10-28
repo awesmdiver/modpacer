@@ -79,6 +79,7 @@ button:disabled, button.primary:disabled { background:var(--panel); border-color
 .ch-heading { font-weight:600; color:var(--text); margin-top:6px }
 .ch-body.ch-collapsed { max-height:4.2em; overflow:hidden; position:relative; mask-image:linear-gradient(to bottom, black 60%, transparent 100%) }
 .ch-toggle { display:inline-block; margin-top:4px; color:var(--accent-text); font-size:0.75rem; text-decoration:none }
+.pill + .ch-toggle { margin-left:8px }
 .bar { height:5px; background:var(--line); border-radius:3px; margin-top:6px; overflow:hidden; width:120px }
 .bar i { display:block; height:5px; background:var(--accent) }
 /* Working, but no real percentage to show: a short block sliding back and forth (still when motion is reduced). */
@@ -247,7 +248,15 @@ button:disabled, button.primary:disabled { background:var(--panel); border-color
 
 /* Mod manager choice (queue: ask-which-mod-manager, 2026-10-01) */
 .sort-row { display:flex; justify-content:flex-end; align-items:center; gap:10px; margin:0 0 4px }
-.sort-row .seg { margin:0 }
+.search-box { position:relative; flex:0 1 260px; min-width:0; margin-right:auto }
+.search-box input[type=text] { width:100%; box-sizing:border-box; background:var(--bg); border:1px solid var(--line); color:var(--text); border-radius:6px; padding:6px 28px 6px 10px; font:inherit; font-size:0.85rem }
+.search-x { position:absolute; right:2px; top:50%; transform:translateY(-50%); background:transparent; border:0; color:var(--muted); font-size:1rem; line-height:1; padding:4px 8px; cursor:pointer }
+.search-x:hover, .search-x:focus-visible { color:var(--text) }
+.search-x[hidden] { display:none }
+@media (max-width:600px) { .sort-row { flex-wrap:wrap } .search-box { flex:1 1 100%; margin-right:0 } }
+.sort-row .seg { margin:0; border-color:transparent }
+.sort-row .seg span { padding:3px 10px; font-size:0.75rem }
+.sort-row .seg span.on { background:transparent; color:var(--text); box-shadow:inset 0 -2px 0 var(--accent-fill) }
 .sort-l { color:var(--muted); font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em }
 .seg { display:inline-flex; border:1px solid var(--line); border-radius:6px; overflow:hidden; margin:4px 0 6px }
 .seg span { padding:6px 14px; font-size:0.82rem; color:var(--muted); cursor:pointer; user-select:none }
@@ -278,6 +287,8 @@ button:disabled, button.primary:disabled { background:var(--panel); border-color
 .spinner { width:16px; height:16px; border:2px solid var(--line); border-top-color:var(--accent); border-radius:50%; animation:spin 0.9s linear infinite; flex-shrink:0 }
 @keyframes spin { to { transform:rotate(360deg) } }
 
+.app-name { color:inherit; text-decoration:none }
+.app-name:hover, .app-name:focus-visible { text-decoration:underline }
 .app-version { color:var(--muted); font-size:0.75rem; font-weight:400; margin-left:6px }
 
 /* "I make QOL mods to make things easier." (queue: more-from-me, 2026-10-01) -- bottom of Settings; this tool's own theme colours. */
@@ -346,3 +357,27 @@ button.su-muted { background:none; color:var(--muted) }
 /* A callout whose title is a plain sentence (no leading icon to hang): no hanging indent. */
 .callout--plain .callout__title { text-indent:0; padding-left:0; font-weight:600 }
 .callout--plain .callout__body { padding-left:0; margin-top:10px }
+/* Mod cover pictures and descriptions (design/mockup-mod-cover-pictures.html, layout A): a 128 x 72 frame at the left of every mod row. */
+.row.has-cover { grid-template-columns:128px 1fr 170px auto }
+.row.has-cover > .thumb { grid-column:1; grid-row:1; align-self:start }
+.row.has-cover > :not(.thumb):nth-child(n+4) { grid-column:2 / -1 }
+.thumb { width:128px; height:72px; border-radius:8px; border:1px solid var(--line); position:relative; overflow:hidden; box-sizing:border-box }
+.thumb img { width:100%; height:100%; object-fit:cover; display:block }
+.thumb[data-action="zoom-cover"] { cursor:zoom-in }
+.thumb.empty { background:transparent; border:1px dashed var(--line) }
+.thumb.load { background:linear-gradient(90deg, var(--panel), color-mix(in srgb, var(--text) 12%, var(--bg)), var(--panel)); background-size:200% 100%; animation:thumb-shimmer 1.2s linear infinite }
+@keyframes thumb-shimmer { to { background-position:-200% 0 } }
+@media (prefers-reduced-motion: reduce) { .thumb.load { animation:none } }
+.cover-zoom { width:min(90vw, 640px); aspect-ratio:16 / 9; object-fit:cover; border-radius:10px; border:1px solid var(--line); cursor:zoom-out }
+.desc-slot:empty { min-height:1px } /* stays in the layout (a hidden box is never reported as seen), so it can be watched */
+.desc { color:var(--muted); font-size:0.82rem; line-height:1.4; margin-top:6px; overflow-wrap:anywhere; min-width:0 }
+.desc b { color:var(--text); font-weight:600 }
+.desc .ch-heading { margin-top:0 } /* the heading style of What's new; the space above comes from .gap */
+.desc .gap { margin-top:8px }
+.desc ul { margin:4px 0; padding-left:18px } /* the list style of What's new: a wrapped line lines up under its text, not its bullet */
+.desc ul.gap { margin-top:8px }
+.desc.clamp { max-height:calc(2 * 1.4 * 0.82rem); overflow:hidden } /* exactly two lines: a heading counts as one, a bullet counts per wrapped line */
+.desc.clamp * { margin-top:0 !important; margin-bottom:0 !important }
+@media (max-width:640px) { .row.has-cover { grid-template-columns:1fr } .row.has-cover > .thumb { grid-column:1 } .row.has-cover > :not(.thumb):nth-child(n+4) { grid-column:1 } }
+.ch-toggle[hidden] { display:none }
+.prog-note { color:var(--muted); font-size:0.78rem; margin-top:4px }

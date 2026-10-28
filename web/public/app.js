@@ -2,6 +2,9 @@
 
 function $(id) { return document.getElementById(id); }
 
+// The project's public page: the one place its address is written on the page (the ModPacer name at the top opens it through the same open-link action as every other link).
+const MODPACER_PAGE_URL = 'https://github.com/awesmdiver/modpacer';
+
 // The one place every call to ModPacer's server goes through. X-ModPacer is what tells the server the call came from this page
 // (another website cannot send a custom header without a permission check ModPacer never grants).
 function modpacerFetch(url, opts) {
@@ -369,21 +372,31 @@ function renderRow(row) {
             action = `<button data-action="open-link"${visitAttr(row)} data-url="${escapeHtml(webUrl(row.externalUrl))}">Open on Nexus</button>`;
             changesHtml = `<div class="changes">Nexus only allows automatic downloads for Premium members. Add your API key in <b>Settings</b>, or download it directly from Nexus.</div>`;
         } else {
-            action = webUrl(row.externalUrl) ? `<button data-action="open-link"${visitAttr(row)} data-url="${escapeHtml(webUrl(row.externalUrl))}">View release</button>` : '';
+            action = webUrl(row.externalUrl) ? `<button data-action="open-link"${visitAttr(row)} data-url="${escapeHtml(webUrl(row.externalUrl))}">${row.releaseAmbiguous ? 'Open download page' : 'View release'}</button>` : '';
         }
     } else if ((row.status === 'up_to_date' || row.status === 'unknown_version') && row.vortexWaiting) {
         // Vortex was still busy when this was checked: no "Up to date" until Vortex has really answered (checked again by itself).
         action = `<div class="muted" style="font-size:0.75rem;text-align:right">Waiting for Vortex…</div>`;
     } else if (row.installedVersionUnknown && row.status === 'unknown_version') {
         // Vortex answered fully, and its entry for this mod has no version: say what is true (nothing is waiting).
-        // A hand-installed mod will never get one by itself, so the button tells Vortex the latest version (only a live entry, never a remembered one).
+        // A hand-installed mod will never get one by itself, so the player says which it is: the same as the latest (the button tells Vortex that version),
+        // or older (Update). Only a live entry, never a remembered one.
+        const off = batchRunning ? ' disabled' : '';
         action = `<div class="muted" style="font-size:0.75rem;text-align:right">Installed, but Vortex doesn't know its version</div>`
             + (row.vortexModId && row.latestVersion && !row.vortexInfoFromCache
-                ? `<button data-action="set-known-version" data-id="${escapeHtml(row.id)}"${batchRunning ? ' disabled' : ''}>It's ${escapeHtml(row.latestVersion)}</button>` : '');
+                ? `<button class="primary" data-action="update-anyway" data-id="${escapeHtml(row.id)}"${off}>Update</button>`
+                + `<button class="btn-muted" data-action="set-known-version" data-id="${escapeHtml(row.id)}"${off}>It's ${escapeHtml(row.latestVersion)}</button>` : '');
+    } else if (row.status === 'up_to_date' && row.versionSetByPlayer && row.vortexModId && !row.vortexInfoFromCache) {
+        // The version was typed in by "It's <version>": a way back if that was the wrong button.
+        action = `<span class="pill p-ok">Up to date</span><a href="#" class="ch-toggle" data-action="update-anyway" data-id="${escapeHtml(row.id)}">Update anyway</a>`;
     } else if (row.status === 'up_to_date' || row.status === 'unknown_version') {
         action = `<span class="pill p-ok">${row.status === 'unknown_version' ? "Can't check version" : 'Up to date'}</span>`;
     } else if (row.status === 'not_on_hub') {
         action = `<span class="pill p-ok">Not on the Hub</span>`;
+    }
+    if (row.isProgram) { // never Download, Update or Install: only the download page (the status and versions above stay true)
+        if (row.status === 'update_available' || row.status === 'needs_you') action = programButton(row);
+        changesHtml += programNote(row);
     }
     const right = `<div class="right">${rowIconsHtml(row)}${action}</div>`;
 
@@ -407,11 +420,12 @@ function renderRow(row) {
 
     // Installed, but SkyrimNet's registry does not list it yet (its files are in an enabled mod, or a folder named for it): the one warning line.
     if (row.notRegisteredYet) changesHtml += `<div class="req-warn">&#9888;&#65039; ${escapeHtml(row.notRegisteredYet)}</div>`;
-    return `<div class="row" data-row-id="${escapeHtml(row.id)}">
-        <div><div class="name">${escapeHtml(row.title)}${nsfwPill(row)}</div><div class="meta">${metaBits.join(' &middot; ') || '&nbsp;'}</div>${countsLine(row)}</div>
+    return `<div class="row${modCovers.rowClass()}" data-row-id="${escapeHtml(row.id)}">
+        <div><div class="name">${escapeHtml(row.title)}${nsfwPill(row)}</div><div class="meta">${metaBits.join(' &middot; ') || '&nbsp;'}</div>${countsLine(row)}${modCovers.descSlot(row)}</div>
         <div><div class="ver"${verTitle}>${verHtml}</div>${dateHtml}</div>
         ${right}
         ${changesHtml}
+        ${modCovers.thumbHtml(row)}
     </div>`;
 }
 
@@ -576,22 +590,32 @@ function groupHeader(label, groupRows, key) {
 }
 
 // ---- Expandable sections: a chevron, the name, the count in brackets and the section's own action right-justified. A click on the header opens
-// or closes it. Exactly ONE section is open when the page starts, chosen once from the counts (Updates, else Up to date, else Mods not
-// installed); nothing is remembered between visits (a remembered choice is what used to leave two open). After that, only the person's own clicks
+// or closes it. Exactly ONE section is open when the page starts, chosen from the counts (Updates, else Up to date, else Mods not
+// installed) and re-chosen on every state until the check is complete; nothing is remembered between visits (a remembered choice is what used to leave two open). After that, only the person's own clicks
 // change what is open: a refresh never does.
 const SECTION_DEFAULTS = { updates: false, uptodate: false, notinstalled: false }; // the keys; the open one is picked by chooseStartupSection
 let sectionState = { ...SECTION_DEFAULTS };
-let sectionsDecided = false; // true once the start-up choice was made, or the person opened/closed something themselves
-function chooseStartupSection(updatesCount, upToDateCount, notInstalledCount) {
+let sectionsDecided = false; // true once the start-up choice is final (the check is complete), or the person opened/closed something themselves
+// The rows arrive in stages (the update row can come after the others), so until the check is complete the choice is made again on every state: the open section
+// follows the first non-empty one. `final` = the check is complete; the person's own click stops it at once (setSectionOpen).
+function chooseStartupSection(updatesCount, upToDateCount, notInstalledCount, final) {
     if (sectionsDecided) return;
     const open = updatesCount > 0 ? 'updates' : upToDateCount > 0 ? 'uptodate' : notInstalledCount > 0 ? 'notinstalled' : null;
-    if (!open) return; // nothing to show yet: decide when the first rows arrive
-    sectionsDecided = true;
-    sectionState = { ...SECTION_DEFAULTS, [open]: true };
+    if (open) sectionState = { ...SECTION_DEFAULTS, [open]: true };
+    if (final && open) sectionsDecided = true;
 }
+// The check is complete: one has finished (lastCheckedAt), none is running or about to start, and no row is still waiting on Vortex's answer.
+function startupCheckComplete(state, rows) {
+    return !!state.lastCheckedAt && !state.checking && !autoCheckPending && !rows.some((r) => r.vortexWaiting);
+}
+// While a search is on, the sections with a match open by themselves; the person's own clicks then go in searchOpen, so sectionState (what they had
+// before the first keystroke) is never touched and comes back exactly when the search is cleared.
+let searchTerms = [];
+let searchOpen = {};
+function sectionIsOpen(key) { return searchTerms.length > 0 ? searchOpen[key] !== false : !!sectionState[key]; }
 function setSectionOpen(key, open) {
-    sectionsDecided = true; // the person's own choice stands
-    sectionState[key] = !!open;
+    if (searchTerms.length > 0) searchOpen[key] = !!open;
+    else { sectionsDecided = true; sectionState[key] = !!open; } // the person's own choice stands
     const sec = document.querySelector(`.sec[data-section="${key}"]`);
     if (sec) {
         sec.classList.toggle('open', !!open);
@@ -600,7 +624,7 @@ function setSectionOpen(key, open) {
     }
 }
 function sectionHtml(key, label, countText, groupRows, actionHtml, bodyHtml) {
-    const open = !!sectionState[key];
+    const open = sectionIsOpen(key);
     return `<div class="sec${open ? ' open' : ''}" data-section="${key}"><div class="group-h sec-h" data-action="toggle-section" data-section="${key}" role="button" tabindex="0" aria-expanded="${open}"><span class="sec-t"><span class="chev">&#9654;</span><span>${label}${countText ? ` <span class="cnt">(${countText})</span>` : ''}</span></span><span class="grow"></span><span class="sec-act">${actionHtml || ''}</span></div><div class="sec-body">${bodyHtml}</div></div>`;
 }
 
@@ -741,7 +765,13 @@ let installingIds = new Set(); // Install pressed (or Install all running): show
 let installAllBusy = false;
 let installSkipNote = []; // [{ title, why }] the last Install all skipped (a note at the top of the section until the next check)
 // Whether the updater can fetch this listing by itself: a GitHub link, or a Nexus link with a Nexus key set.
-function hasDownload(row) { return row.urlKind === 'github' || (row.urlKind === 'nexus' && nexusKeySet); }
+function hasDownload(row) { return !row.isProgram && (row.urlKind === 'github' || (row.urlKind === 'nexus' && nexusKeySet)); } // a program is never fetched
+// A listed program (lib/program-listings.json): its one button opens the listing's download page; nothing is downloaded or installed.
+function programButton(row) {
+    const url = /^https:\/\//i.test(webUrl(row.externalUrl)) ? webUrl(row.externalUrl) : ''; // only an https address
+    return url ? `<button data-action="open-link"${visitAttr(row)} data-url="${escapeHtml(url)}">Open download page</button>` : '';
+}
+function programNote(row) { return row.programLine ? `<div class="prog-note">${escapeHtml(row.programLine)}</div>` : ''; }
 function installableRows(rows) {
     return (rows || []).filter((r) => r.notInstalled && r.status === 'update_available' && hasDownload(r) && !r.sameAs && !r.notRegisteredYet); // a mod ModPacer is asking about is never part of a bulk install
 }
@@ -786,6 +816,7 @@ function requiresLine(row) {
     return `<div class="req-warn">&#9888;&#65039; Requires ${list}. Install ${names.length === 1 ? 'it' : 'them'} before this mod.</div>`;
 }
 function notInstalledAction(row) {
+    if (row.isProgram) return programButton(row);
     if (row.notRegisteredYet) return ''; // its files are already there; nothing to download, the line under the name says what to do
     const mo2 = currentManager === 'mo2';
     const idAttr = `data-id="${escapeHtml(row.id)}"`;
@@ -818,21 +849,26 @@ function renderNotInstalledRow(row) {
     const req = requiresLine(row);
     const same = sameAsLine(row);
     const reg = row.notRegisteredYet ? `<div class="req-warn">&#9888;&#65039; ${escapeHtml(row.notRegisteredYet)}</div>` : '';
-    const more = (tag || req || same || reg) ? `<div class="ni-more">${tag}${reg}${req}${same}</div>` : '';
-    return `<div class="row" data-row-id="${escapeHtml(row.id)}">
+    const desc = modCovers.descSlot(row);
+    const prog = programNote(row);
+    const more = (tag || desc || req || same || reg || prog) ? `<div class="ni-more">${tag}${desc}${prog}${reg}${req}${same}</div>` : '';
+    return `<div class="row${modCovers.rowClass()}" data-row-id="${escapeHtml(row.id)}">
         <div><div class="name">${escapeHtml(row.title)}${nsfwPill(row)}</div><div class="meta">${metaBits.join(' &middot; ') || '&nbsp;'}</div>${countsLine(row)}</div>
         <div><div class="ver">${escapeHtml(row.latestVersion || '?')}</div></div>
         <div class="right">${rowIconsHtml(row)}${notInstalledAction(row)}<button class="su-link" data-action="exclude-mod" data-id="${escapeHtml(row.id)}">Exclude</button></div>
         ${more}${err}
+        ${modCovers.thumbHtml(row)}
     </div>`;
 }
-function notInstalledSectionHtml(state, niRows) {
+function notInstalledSectionHtml(state, niRows, totalCount) {
+    const searching = searchTerms.length > 0;
+    if (searching && niRows.length === 0) return ''; // a section with no match is not shown
     if (state.notInstalledState === 'unreadable') {
         return sectionHtml('notinstalled', 'Mods not installed', '', [], '', `<div class="note">The Hub's list couldn't be read right now.</div>`);
     }
     const mo2 = state.modManager === 'mo2';
     const eligible = installableRows(niRows);
-    const installAllHtml = eligible.length > 0
+    const installAllHtml = eligible.length > 0 && !searching
         ? `<button class="primary" id="installAllBtn" data-action="install-all"${downloadFolderMissing || batchRunning || installAllBusy ? ' disabled' : ''}${downloadFolderMissing ? ' title="Pick a download folder in Settings first"' : ''}>${mo2 ? 'Download all' : 'Install all'} (${eligible.length})</button>`
         : '';
     const skipNote = installSkipNote.length > 0
@@ -842,7 +878,7 @@ function notInstalledSectionHtml(state, niRows) {
     if (niRows.length === 0) body = `<div class="note">Every mod in the Hub that ModPacer handles is installed.</div>`;
     else body = skipNote + niRows.map(renderNotInstalledRow).join('');
     if (!state.showAdultNotInstalled && niRows.length > 0) body = `<div class="note">Adult (NSFW) listings are hidden. You can turn them on in Settings.</div>` + body;
-    return sectionHtml('notinstalled', 'Mods not installed', String(niRows.length), niRows, installAllHtml, body);
+    return sectionHtml('notinstalled', 'Mods not installed', searching ? `${niRows.length} of ${totalCount}` : String(niRows.length), niRows, installAllHtml, body);
 }
 
 // SkyrimNet could not be found: one warning line, what was looked at, what ModPacer needs, and a way to point at it by hand.
@@ -902,6 +938,40 @@ document.addEventListener('keydown', (e) => {
     const s = e.target && e.target.closest ? e.target.closest('#sortRow [data-sort]') : null;
     if (s && e.target === s) { e.preventDefault(); chooseSort(s.dataset.sort); }
 });
+// ---- The search box on the Sort by line: a live filter of the lists (queue: a-search-box-on-the-sort-by-line-type-to-find-a-mod).
+// Client-side only: the typed text is matched against the page's own data, never saved and never sent anywhere.
+let searchTimer = null;
+function applySearch() {
+    const input = $('modSearch');
+    const terms = window.modSearch.words(input.value);
+    $('modSearchClear').hidden = input.value === '';
+    if (terms.join(' ') === searchTerms.join(' ')) return;
+    searchTerms = terms;
+    searchOpen = {}; // every section with a match opens by itself; the sections the person had are kept in sectionState
+    if (lastRenderedState) renderPlugins(lastRenderedState);
+}
+function setSearch(text) {
+    clearTimeout(searchTimer);
+    $('modSearch').value = text;
+    applySearch();
+}
+$('modSearch').addEventListener('input', () => {
+    $('modSearchClear').hidden = $('modSearch').value === '';
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(applySearch, 120);
+});
+$('modSearch').addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && $('modSearch').value !== '') { e.preventDefault(); setSearch(''); }
+});
+$('modSearchClear').addEventListener('click', () => { setSearch(''); $('modSearch').focus(); });
+document.addEventListener('keydown', (e) => { // / anywhere on the page (not inside a field) jumps to the box
+    if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) return;
+    const t = e.target;
+    if (t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable)) return;
+    if ($('sortRow').style.display === 'none' || $('main').style.display === 'none') return;
+    e.preventDefault();
+    $('modSearch').focus();
+});
 function renderPlugins(state) {
     appliedSeq = ++stateSeq; // anything asked for before this paint is older than it
     lastRenderedState = state;
@@ -931,6 +1001,7 @@ function renderPlugins(state) {
     renderVortexHelperBanner(state.modManager !== 'vortex' ? null : (vortexLostNotice ? 'vortex_running_helper_unreachable' : state.vortexHelperState));
     renderHelperNotInstalledBanner(state);
 
+    modCovers.configure({ show: state.showModPictures, adult: state.showAdultNotInstalled });
     const allRows = state.rows || [];
     const rows = allRows.filter((r) => !r.notInstalled); // the mods found in the SkyrimNet install; the not-installed listings have their own section
     const niRows = allRows.filter((r) => r.notInstalled);
@@ -955,8 +1026,8 @@ function renderPlugins(state) {
     const tile = (cls, target, hint, n, label) => target
         ? `<div class="stat ${cls} go" data-action="goto-section" data-target="${target}" role="button" tabindex="0" title="${hint}"><div class="n">${n}</div><div class="l">${label}</div></div>`
         : `<div class="stat ${cls}"><div class="n">${n}</div><div class="l">${label}</div></div>`;
-    const upToDateCount = upToDate.filter((r) => !r.vortexWaiting).length + notOnHub.length;
-    chooseStartupSection(updates.length, upToDate.length, niRows.length); // the same counts the section headers show
+    const upToDateCount = upToDate.filter((r) => !r.vortexWaiting && !r.versionUnconfirmed).length + notOnHub.length;
+    chooseStartupSection(updates.length, upToDate.length, niRows.length, startupCheckComplete(state, rows)); // the same counts the section headers show
     $('summary').innerHTML = [
         tile('upd', updates.length > 0 ? 'updates' : '', 'Show the mods that have updates', updates.length, `${plural(updates.length, 'Update', 'Updates')} ready`),
         tile('nx', needsYou.length > 0 ? 'nexus' : '', 'Show the mods you need to download from Nexus', needsYou.filter((r) => !r.linkOutOfDate).length, 'Download from Nexus'),
@@ -967,8 +1038,9 @@ function renderPlugins(state) {
     // One legend for the whole page, under the summary tiles, so it is there even when every section is closed.
     $('legendLine').innerHTML = legendHtml(allRows);
 
-    const pendingDownloadCount = rows.filter((r) => r.status === 'update_available').length;
-    $('downloadAllBtn').style.display = pendingDownloadCount > 0 ? '' : 'none';
+    const pendingDownloadCount = rows.filter((r) => r.status === 'update_available' && !r.isProgram).length;
+    const searching = searchTerms.length > 0 && allRows.length > 0;
+    $('downloadAllBtn').style.display = pendingDownloadCount > 0 && !searching ? '' : 'none'; // the bulk buttons act on the whole list, so they step aside while a search is on
     $('downloadAllBtn').textContent = `Download all (${pendingDownloadCount})`;
     $('downloadAllBtn').disabled = downloadFolderMissing;
     $('downloadAllBtn').title = downloadFolderMissing ? 'Pick a download folder in Settings first' : '';
@@ -977,19 +1049,25 @@ function renderPlugins(state) {
 
     const updateAllCount = updatableRows(rows).length;
 
+    // The search: each list shows only its matches (the tiles above and the engine keep the full counts).
+    const terms = searching ? searchTerms : [];
+    const shown = (list) => window.modSearch.filter(list, terms);
+    const fUpdates = shown(updates), fNeedsYou = shown(needsYou), fUpToDate = shown(upToDate), fNotOnHub = shown(notOnHub), fNi = shown(niSorted);
+    const ofText = (f, all) => (searching ? `${f.length} of ${all.length}` : String(all.length));
     let html = '';
-    if (updates.length > 0) {
+    if (fUpdates.length > 0) {
         let updateAllHtml = '';
-        if (updateAllCount > 0) {
+        if (updateAllCount > 0 && !searching) {
             const disabledAttr = downloadFolderMissing ? 'disabled title="Pick a download folder in Settings first"' : (batchRunning ? 'disabled' : '');
             updateAllHtml = `<button class="primary" id="updateAllBtn" data-action="update-all" ${disabledAttr}>Update all (${updateAllCount})</button>`;
         }
-        html += sectionHtml('updates', 'Updates', String(updates.length), updates, updateAllHtml, updates.map(renderRow).join(''));
+        html += sectionHtml('updates', 'Updates', ofText(fUpdates, updates), fUpdates, updateAllHtml, fUpdates.map(renderRow).join(''));
     }
-    if (needsYou.length > 0) html += groupHeader('Download from Nexus', needsYou, 'nexus') + needsYou.map(renderRow).join('');
-    if (upToDate.length > 0) html += sectionHtml('uptodate', 'Up to date', String(upToDate.length), upToDate, '', upToDate.map(renderRow).join(''));
-    if (notOnHub.length > 0) html += groupHeader('Not on the Hub', notOnHub, 'nothub') + notOnHub.map(renderRow).join('');
-    html += notInstalledSectionHtml(state, niSorted);
+    if (fNeedsYou.length > 0) html += groupHeader('Download from Nexus', fNeedsYou, 'nexus') + fNeedsYou.map(renderRow).join('');
+    if (fUpToDate.length > 0) html += sectionHtml('uptodate', 'Up to date', ofText(fUpToDate, upToDate), fUpToDate, '', fUpToDate.map(renderRow).join(''));
+    if (fNotOnHub.length > 0) html += groupHeader('Not on the Hub', fNotOnHub, 'nothub') + fNotOnHub.map(renderRow).join('');
+    html += notInstalledSectionHtml(state, fNi, niSorted.length);
+    if (searching && html === '') html = `<p class="muted">No mods found.</p>`;
     // Before the very first check, this card would otherwise just be an empty box (director, from
     // a live screenshot, 2026-09-30: "Not checked yet.", three zeros, and nothing underneath) --
     // a quiet nudge toward the one thing that actually fixes it. Never shown once a real check has
@@ -1000,6 +1078,7 @@ function renderPlugins(state) {
     // The automatic repeat is running (Vortex was still filling things in): say so, so it never looks stuck.
     $('retryNote').style.display = state.vortexRetrying ? '' : 'none';
     $('pluginList').innerHTML = html;
+    modCovers.afterPaint($('pluginList')); // fills the descriptions already known and starts watching what is on screen; nothing is asked for until a row is seen
 
     // Also keep looking while a row is waiting on a Vortex that is still starting, so it flips to Update by itself.
     const stillWorking = batchRunning || singleUpdating || installingIds.size > 0 || Object.keys(liveProgress).length > 0 || allRows.some((r) => r.status === 'queued' || r.status === 'downloading') || rows.some((r) => r.vortexWaiting) || state.vortexRetrying || state.vortexHelperState === 'vortex_running_helper_unreachable' || state.checking || rows.some((r) => r.status === 'queued' || r.status === 'downloading' || (r.status === 'downloaded' && !r.updatePreview && /^Waiting for Vortex/.test(r.updateUnavailableReason || '')));
@@ -1053,7 +1132,7 @@ $('checkNowBtn').addEventListener('click', async () => {
 $('downloadAllBtn').addEventListener('click', async () => {
     dropLeftover();
     const state = await api('GET', '/api/state');
-    const pending = (state.rows || []).filter((r) => r.status === 'update_available' && !r.notInstalled); // the not-installed listings have their own Install
+    const pending = (state.rows || []).filter((r) => r.status === 'update_available' && !r.notInstalled && !r.isProgram); // the not-installed listings have their own Install
     await Promise.all(pending.map((r) => api('POST', `/api/plugins/${encodeURIComponent(r.id)}/download`, { how: 'download-all' })));
     refreshState();
 });
@@ -1126,9 +1205,12 @@ document.addEventListener('click', async (e) => {
         if (!target) return;
         const collapsed = target.classList.toggle('ch-collapsed');
         el.textContent = collapsed ? 'Show more' : 'Show less';
+    } else if (action === 'toggle-desc' || action === 'zoom-cover') {
+        e.preventDefault();
+        modCovers.handleAction(action, el);
     } else if (action === 'toggle-section') {
         e.preventDefault();
-        setSectionOpen(el.dataset.section, !sectionState[el.dataset.section]);
+        setSectionOpen(el.dataset.section, !sectionIsOpen(el.dataset.section));
     } else if (action === 'goto-section') {
         e.preventDefault();
         const key = el.dataset.target;
@@ -1149,14 +1231,7 @@ document.addEventListener('click', async (e) => {
         await openConfirmInstallAll();
     } else if (action === 'update') {
         e.preventDefault();
-        const id = el.dataset.id;
-        markWorking([id]); // the row changes at once, before anything is read from Vortex
-        let gate = 'cancel', kept = false;
-        try {
-            gate = await disabledGate([id]);
-            if (gate === 'chosen') { kept = true; workingDone([id], { render: false }); await runSingleUpdate(id); } // the question was the confirmation; it sets the working state itself, no flicker
-            else if (gate === 'none') await openConfirm(id); // the confirm card is up when this returns
-        } finally { if (!kept) workingDone([id]); }
+        await startUpdate(el.dataset.id);
     } else if (action === 'open-wizard') {
         e.preventDefault();
         const id = el.dataset.id;
@@ -1178,6 +1253,9 @@ document.addEventListener('click', async (e) => {
         if (lostVortex(reply && reply.result)) vortexLostNotice = true;
         await refreshState();
         if (reply && reply.result && reply.result.ok) await checkOldDownloads();
+    } else if (action === 'update-anyway') {
+        e.preventDefault();
+        await updateAnywayClick(el.dataset.id);
     } else if (action === 'set-known-version') {
         e.preventDefault();
         const setId = el.dataset.id;
@@ -1494,6 +1572,33 @@ $('confirmUpdateBtn').addEventListener('click', async () => {
 });
 
 // One mod's own Update / Install, start to finish (the confirm card's button, and Install on a Mods-not-installed row, both end here).
+// The Update button: the same question an update always asks (or the install at once when the "disabled mod" question already settled it).
+async function startUpdate(id) {
+    markWorking([id]); // the row changes at once, before anything is read from Vortex
+    let gate = 'cancel', kept = false;
+    try {
+        gate = await disabledGate([id]);
+        if (gate === 'chosen') { kept = true; workingDone([id], { render: false }); await runSingleUpdate(id); } // the question was the confirmation; it sets the working state itself, no flicker
+        else if (gate === 'none') await openConfirm(id); // the confirm card is up when this returns
+    } finally { if (!kept) workingDone([id]); }
+}
+// "Update" on a mod Vortex has no version for, and "Update anyway": the row becomes a normal update, the latest is downloaded, and then it goes
+// the way every Update goes (the confirm card, the install, the old copy removed).
+async function updateAnywayClick(id) {
+    markWorking([id]);
+    let ready = false;
+    try {
+        const reply = await api('POST', `/api/plugins/${encodeURIComponent(id)}/update-anyway`);
+        if (lostVortex(reply && reply.result)) vortexLostNotice = true;
+        if (reply && reply.result && reply.result.ok) {
+            dropLeftover();
+            const row = await api('POST', `/api/plugins/${encodeURIComponent(id)}/download`);
+            ready = !!(row && row.updatePreview);
+        }
+    } finally { workingDone([id], { render: false }); }
+    await refreshState();
+    if (ready) await startUpdate(id);
+}
 async function runSingleUpdate(id) {
     dropLeftover();
     singleUpdating = true;
@@ -1542,7 +1647,7 @@ function installSkipWhy(row) {
 async function openConfirmInstallAll() {
     if (batchRunning || installAllBusy) return;
     const state = await api('GET', '/api/state');
-    const ni = (state.rows || []).filter((r) => r.notInstalled && r.status === 'update_available' && !r.sameAs && !r.notRegisteredYet);
+    const ni = (state.rows || []).filter((r) => r.notInstalled && r.status === 'update_available' && !r.isProgram && !r.sameAs && !r.notRegisteredYet);
     const mo2 = state.modManager === 'mo2';
     const eligible = ni.filter(hasDownload);
     if (eligible.length === 0) { renderPlugins(state); return; }
@@ -1836,6 +1941,7 @@ async function loadSettings() {
     paintExcludedMods(cfg.excludedMods);
     $('tellNewModPacerToggle').classList.toggle('off', cfg.tellNewModPacer === false);
     $('keepLogToggle').classList.toggle('off', cfg.keepLog === false);
+    $('showModPicturesToggle').classList.toggle('off', cfg.showModPictures === false);
     adultConfirmed = !!cfg.adultConfirmed;
     $('deleteOldDownloadToggle').classList.toggle('off', !cfg.deleteOldDownloadAfterUpdate);
     $('skyrimInstallStatus').textContent = cfg.skyrimInstallPath ? '' : '';
@@ -2044,6 +2150,7 @@ wireToggle($('checkOnVortexStartToggle'), 'checkOnVortexStart');
 wireToggle($('autoDownloadToggle'), 'autoDownload');
 wireToggle($('tellNewModPacerToggle'), 'tellNewModPacer');
 wireToggle($('keepLogToggle'), 'keepLog');
+wireToggle($('showModPicturesToggle'), 'showModPictures');
 wireToggle($('deleteOldDownloadToggle'), 'deleteOldDownloadAfterUpdate');
 
 // --- SkyrimNet theme ---
@@ -2180,6 +2287,7 @@ const startVortexFlow = createStartVortexFlow({
 (async function initialLoad() {
     $('moreFromMe').innerHTML = moreFromMe.render();
     loadTheme();
+    $('appNameLink').dataset.url = MODPACER_PAGE_URL;
     api('GET', '/api/ping').then((p) => { if (p && p.version) $('appVersion').textContent = 'v' + p.version; }).catch(() => {});
     try { await loadSettings(); } catch { /* the page still works without it */ }
     await refreshState();

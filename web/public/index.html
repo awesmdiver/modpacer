@@ -26,7 +26,7 @@
   <div class="card">
     <div class="top">
       <div>
-        <h1>ModPacer <span class="app-version" id="appVersion"></span></h1>
+        <h1><a href="#" class="app-name" id="appNameLink" data-action="open-link" title="ModPacer on GitHub">ModPacer</a> <span class="app-version" id="appVersion"></span></h1>
         <div class="subtitle" id="subtitle">Checking...</div>
       </div>
       <div class="inline">
@@ -46,7 +46,7 @@
   </div>
 
   <div class="card">
-    <div class="sort-row" id="sortRow" style="display:none"><span class="sort-l">Sort by</span><span class="seg" role="group" aria-label="Sort the mod list"><span data-sort="list" role="button" tabindex="0">Default order</span><span data-sort="az" role="button" tabindex="0">Name A to Z</span><span data-sort="za" role="button" tabindex="0">Name Z to A</span></span></div>
+    <div class="sort-row" id="sortRow" style="display:none"><span class="search-box"><input type="text" id="modSearch" placeholder="Search mods" aria-label="Search mods" autocomplete="off" spellcheck="false"><button type="button" class="search-x" id="modSearchClear" aria-label="Clear the search" hidden>&times;</button></span><span class="sort-l">Sort by</span><span class="seg" role="group" aria-label="Sort the mod list"><span data-sort="list" role="button" tabindex="0">Default order</span><span data-sort="az" role="button" tabindex="0">Name A to Z</span><span data-sort="za" role="button" tabindex="0">Name Z to A</span></span></div>
     <div id="pluginList"></div>
   </div>
 </div>
@@ -117,6 +117,7 @@
       <label class="toggle"><span class="sw off" id="showAdultToggle"></span><span><b>Show adult (NSFW) mods</b></span></label>
       <label class="toggle" id="deleteOldLabel"><span class="sw" id="deleteOldDownloadToggle"></span><span><b>Automatically remove previous version after update</b></span></label>
       <div style="display:flex;align-items:center;gap:10px"><label class="toggle" style="flex:1"><span class="sw" id="keepLogToggle"></span><span><b>Enable logging</b></span></label><button class="su-muted" id="openLogFolderBtn">Open log folder</button></div>
+      <label class="toggle"><span class="sw" id="showModPicturesToggle"></span><span><b>Show mod pictures</b><div class="muted">Turn off for a more compact list.</div></span></label>
       <label class="toggle"><span class="sw" id="tellNewModPacerToggle"></span><span><b>Notify when ModPacer updates are available</b></span></label>
       <label class="toggle" id="checkOnVortexStartLabel"><span class="sw" id="checkOnVortexStartToggle"></span><span><b>Check when Vortex starts</b></span></label>
       <label class="toggle"><span class="sw" id="autoDownloadToggle"></span><span><b>Download updates automatically</b></span></label>
@@ -261,6 +262,8 @@
 <script src="more-from-me.js"></script>
 <script src="row-state.js"></script>
 <script src="plural.js"></script>
+<script src="mod-search.js"></script>
+<script src="mod-covers.js"></script>
 <script src="old-download-note.js"></script>
 <script src="update-follow.js"></script>
 <script src="start-vortex.js"></script>

@@ -1,0 +1,8 @@
+{
+  "note": "Hub listings that are programs with their own installer or zip, not mods for Vortex or Mod Organizer 2. ModPacer never downloads or installs these; the row's one button opens the listing's download page. Add a Hub id (author.repository, lower case) to add a program.",
+  "programs": [
+    "awesmdiver.skyrimnet-multiproxy",
+    "zol.pandorumllm",
+    "awesmdiver.modpacer"
+  ]
+}

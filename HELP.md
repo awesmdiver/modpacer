@@ -11,9 +11,17 @@ The top of the page has four tiles. Click one to jump to its section.
 - **Up to date:** Mods that are already on the latest version.
 - **Not installed:** Mods in the catalog that you don't have yet. Click **Install** on one, or **Install all**.
 
+**Which section is open:** When ModPacer starts, it opens the first section that has something in it: **Updates** if there is an update, otherwise **Up to date**. Open or close any section yourself and ModPacer leaves it exactly how you set it.
+
+**Search:** The box to the left of **Sort by** lets you find mods fast. Type a few letters of a mod's name, author, or description. Every word you type has to match (in any order), and the list narrows as you go. Sections with a match open automatically and show how many mods fit, like **(3 of 20)**. Click the **x** or press **Esc** to clear the search and put your sections back the way they were. Press `/` anywhere to jump straight to the search box. While searching, bulk buttons like **Update all** are hidden since they affect the whole list.
+
 **Sort by:** above the list, pick **Default order**, **Name A to Z** or **Name Z to A**. It sorts inside each section, and ModPacer remembers your choice.
 
-**"Installed, but Vortex doesn't know its version":** this shows for a mod you installed by hand, because Vortex has no version for it. Click **It's <version>** to tell Vortex the version you have. After that, ModPacer can tell you when a newer one is out. Only click it if you really have that version.
+**Pictures and descriptions:** Each mod shows its cover picture (if the author added one) and a short description. Click **Show more** to read the rest. ModPacer saves these on your PC after the first time so they don't download again. To hide the pictures, turn off **Show mod pictures** in **Settings**; the descriptions stay.
+
+**Programs, not mods:** A few things on the Hub are standalone programs with their own installers, like **SkyrimNet MultiProxy**, **PandorumLLM**, and ModPacer itself. ModPacer never tries to install these into Vortex or Mod Organizer 2. Instead, their row shows the version, lets you know if a newer one is out, and gives you an **Open download page** button so you grab it and set it up yourself.
+
+**"Installed, but Vortex doesn't know its version":** This shows for hand-installed mods. ModPacer first checks the file name for a version (like `v0-3`) and offers an **Update** if yours is older. If the file name also has no version, you get a choice. Click **Update** to install the latest version, or **It's <version>** if you already have it. If you click that by mistake, **Update anyway** lets you fix it.
 
 ## Vortex Bridge (for Vortex users)
 
@@ -41,13 +49,13 @@ The file is in the `helper` folder inside your ModPacer folder.
 
 **Why remove it first?** If you drop the new one on top, Vortex shows both versions until it restarts. If you then remove the older one, Vortex removes the new one too, because they are the same extension.
 
-**Why does ModPacer sometimes wait on Vortex?** Vortex needs to be open, finished loading, and not showing any pop-up messages for the Bridge to answer. ModPacer will patiently wait and check again on its own.
+**Why does ModPacer sometimes wait on Vortex?** For the Bridge to answer, Vortex needs to be open, finished loading, and clear of any pop-up messages. While Vortex is busy, rows will say **Waiting for Vortex...**. ModPacer will keep asking on its own for about three minutes, spacing out the tries. Vortex can just be slow right after starting or when installing a big collection. If it still doesn't answer, you'll get a note with a **Retry** button. The log (`update.log`) records every attempt and the reason for the wait.
 
 ## Installing and updating
 
 1. Click **Install** or **Update** on a mod.
 2. Watch the progress on the screen. If the mod has options to pick (a FOMOD), a screen will pop up. Pick what you want and carry on.
-3. When you are done with a batch of mods, click the **Deploy** button. This tells Vortex to apply your mods, and ModPacer will show you the progress.
+3. When you are done with a batch of mods, click the **Deploy** button. This tells Vortex to apply your mods, and ModPacer shows you the progress. ModPacer waits until Vortex actually finishes installing a mod before it offers **Deploy**.
 4. Open Vortex and make sure the mod's plugins are turned on. ModPacer turns them on when it can, and tells you when it does. (If you turned a plugin off yourself, it stays off.)
 
 If Vortex is waiting for you to click something (like a pop-up warning), ModPacer will tell you. Just switch to Vortex, answer the pop-up, and ModPacer will keep going.
@@ -94,11 +102,13 @@ Want your mod listed? Publish it on the SkyrimNet Plugin Hub and ModPacer will f
 - Your Nexus key, if you add one, stays safely on your PC.
 - ModPacer keeps a small log in its own `logs` folder, with no keys in it. Turn it off any time with **Enable logging** in Settings.
 - To tell you when a new ModPacer is out, it reads its own listing on the Plugin Hub, the list it already reads. Turn it off any time in **Settings**.
-- The only thing sent over the internet is the mod's name (its id on the Hub) to fateless.ai when you install, update, or open a page.
+- ModPacer asks GitHub (where the Hub keeps its files) for cover pictures and descriptions, but only for the mods currently on your screen. This request sends nothing about you and works just like opening the page yourself. You can turn pictures off with **Show mod pictures** in **Settings**.
+- Apart from that, the only thing ModPacer sends is the mod's name (its id on the Hub) to fateless.ai when you install, update, or open a page. Nothing about you.
 
 ## Stuck?
 
-- **"Vortex isn't answering":** Check that Vortex is open and has no pop-ups waiting, then click **Retry**.
+- **"Vortex isn't answering":** Check that Vortex is open and has no pop-ups waiting, then click **Retry**. Seeing **Waiting for Vortex...** is completely normal while Vortex starts or installs a collection. ModPacer keeps trying on its own.
+- **A mod shows under "Not on the Hub" but it is on the Hub:** ModPacer matches a mod to its Hub entry using its id, name, or GitHub page. If an author published it under a completely different id and name, let us know on the Issues page.
 - **Nothing shows up in a section:** The tile might count a mod, but the list can be empty if that mod is filtered out (like a hidden adult mod).
 - **"I can't find SkyrimNet":** In **Settings**, pick your **Mod Organizer 2 folder**, or pick the **SkyrimNet folder** yourself (the one with a `config` folder inside it). ModPacer's message lists the folders it checked.
 - **Still stuck?** Open **Settings**, press **Open log folder**, and send us `update.log` on the [ModPacer Issues page](https://github.com/awesmdiver/modpacer/issues). Please don't send `config.json`: it holds your settings, including a Nexus key if you added one.
