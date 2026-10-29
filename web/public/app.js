@@ -333,7 +333,7 @@ function renderRow(row) {
         // The new version is in, but the old copy (its Vortex record, its archive, its staging folder) is not fully gone: never a tick. The error line under
         // the row says what is left; Try again removes it again through the Vortex Bridge and looks.
         // While Try again runs the row shows the usual working word, so the click is never silent; then it finishes, or says what is left.
-        action = updateWorkHtml(row) || `<button data-action="retry-carry-over" data-id="${escapeHtml(row.id)}"${batchRunning ? ' disabled' : ''}>Try again</button>`;
+        action = updateWorkHtml(row) || `<button data-action="retry-carry-over" data-id="${escapeHtml(row.id)}"${batchRunning ? ' disabled' : ''}>Remove old version</button>`;
     } else if (row.status === 'downloaded') {
         // No "Downloaded" status here anymore -- the ⬇ icon above now carries that same meaning
         // (director, from the live page: repeated with an Update button right next to it, the
