@@ -24,7 +24,7 @@
 
     // The order of each group on the page (queue: mod-list-sorted-updated-first-then-newest, 2026-10-04).
     // Only keys that never change during a batch (release date, name, and the group itself) are used -- NOT the
-    // status -- so rows hold still while "Update all" runs. 'updated' / 'deployed' ("Updated ✓") only exist in the
+    // status -- so rows hold still while "Update all" runs. 'updated' / 'deployed' ("Updated") only exist in the
     // Up to date group, where they come first.
     function dateValue(row) {
         const t = row && row.releaseDate ? new Date(row.releaseDate).getTime() : NaN;

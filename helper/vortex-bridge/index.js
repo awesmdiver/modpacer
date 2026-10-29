@@ -231,11 +231,39 @@ const path = require('path');
 const { spawn } = require('child_process');
 
 const PORT = Number(process.env.VB_TEST_PORT) || 59595; // arbitrary, unlikely to collide -- vortex-collection-tools' own server uses 4321. VB_TEST_PORT is for tests only (a real Vortex may be holding 59595)
-const GAME_ID = 'skyrimse'; // matches info.json's own gameId scope; hardcoded for this POC, can generalize later
+// The two Skyrim games Vortex manages under their own game ids. Every route follows whichever of the two
+// Vortex has open (v0.29.0); with anything else open the data routes keep answering for skyrimse, and
+// /health reports the other game's id so a caller can say "Vortex has a different game open".
+const SKYRIM_GAMES = ['skyrimse', 'skyrimvr'];
+const DEFAULT_GAME_ID = 'skyrimse';
 // info.json (not package.json) is the authoritative version -- it's what Vortex itself reads for this
 // extension's own Extensions page, so reporting it here guarantees /health never drifts from what
 // Vortex already shows the user is actually installed.
 const VERSION = require('./info.json').version;
+
+// Vortex's own activeGameId selector (extensions/profile_management/selectors.ts): the gameId of the
+// profile named by state.settings.profiles.activeProfileId. undefined when nothing is open yet.
+function rawActiveGameIdFromState(state) {
+    try {
+        const profileId = state && state.settings && state.settings.profiles ? state.settings.profiles.activeProfileId : undefined;
+        const profile = profileId && state.persistent && state.persistent.profiles ? state.persistent.profiles[profileId] : undefined;
+        return profile && typeof profile.gameId === 'string' ? profile.gameId : undefined;
+    } catch (err) {
+        return undefined;
+    }
+}
+// What /health reports: the active game's id as Vortex has it; skyrimse when Vortex says nothing.
+function activeGameId(api) {
+    return rawActiveGameIdFromState(api.store.getState()) || DEFAULT_GAME_ID;
+}
+// The Skyrim game every other route works on: the active game when it is one of the two, else skyrimse.
+function skyrimGameIdFromState(state) {
+    const id = rawActiveGameIdFromState(state);
+    return SKYRIM_GAMES.includes(id) ? id : DEFAULT_GAME_ID;
+}
+function skyrimGameId(api) {
+    return skyrimGameIdFromState(api.store.getState());
+}
 
 // Where ModPacer (a separate, standalone sibling tool) records its own install
 // folder every time it starts -- see findModPacerInstallPath's own header comment below for the full
@@ -296,8 +324,8 @@ function log(level, message, data) {
 // LevelDB's `###`-joined keys mirror this same state tree path segment-for-segment).
 function getModRules(api, modId) {
     const state = api.store.getState();
-    const mod = state.persistent && state.persistent.mods && state.persistent.mods[GAME_ID]
-        ? state.persistent.mods[GAME_ID][modId]
+    const mod = state.persistent && state.persistent.mods && state.persistent.mods[skyrimGameId(api)]
+        ? state.persistent.mods[skyrimGameId(api)][modId]
         : undefined;
     if (!mod) return null;
     return mod.rules || [];
@@ -318,7 +346,7 @@ function getNeedToDeploy(api) {
         const map = state && state.persistent && state.persistent.deployment
             ? state.persistent.deployment.needToDeploy
             : undefined;
-        const value = map ? map[GAME_ID] : undefined;
+        const value = map ? map[skyrimGameId(api)] : undefined;
         return typeof value === 'boolean' ? value : null;
     } catch (err) {
         return null;
@@ -332,7 +360,7 @@ function getNeedToDeploy(api) {
 // attributes.modId/attributes.fileId/etc per mod), so no translation happens here.
 function getAllMods(api) {
     const state = api.store.getState();
-    return (state.persistent && state.persistent.mods && state.persistent.mods[GAME_ID]) || {};
+    return (state.persistent && state.persistent.mods && state.persistent.mods[skyrimGameId(api)]) || {};
 }
 
 // Full `state.persistent.downloads.files` object, live -- the SAME data vortex-collection-tools' own
@@ -352,13 +380,29 @@ function getAllDownloads(api) {
 function getEnabledModKeys(api) {
     const state = api.store.getState();
     const profileId = state.settings && state.settings.profiles && state.settings.profiles.lastActiveProfile
-        ? state.settings.profiles.lastActiveProfile[GAME_ID]
+        ? state.settings.profiles.lastActiveProfile[skyrimGameId(api)]
         : undefined;
     if (!profileId) return { profileId: null, enabledModKeys: [] };
     const profile = state.persistent && state.persistent.profiles ? state.persistent.profiles[profileId] : undefined;
     const modState = (profile && profile.modState) || {};
     const enabledModKeys = Object.keys(modState).filter((modKey) => modState[modKey] && modState[modKey].enabled === true);
     return { profileId, enabledModKeys };
+}
+
+// One mod's record plus its enabled flag, for GET /mods/:id -- small in-memory reads, no copy of the whole
+// mods subtree. `ready: false` while Vortex has not loaded the game's mods or an active profile yet.
+// `mod` is null for an id Vortex does not know. `enabled` follows getEnabledModKeys (modState[modId].enabled).
+function getOneMod(api, modId) {
+    const state = api.store.getState();
+    const mods = state.persistent && state.persistent.mods ? state.persistent.mods[skyrimGameId(api)] : undefined;
+    const profileId = state.settings && state.settings.profiles && state.settings.profiles.lastActiveProfile
+        ? state.settings.profiles.lastActiveProfile[skyrimGameId(api)]
+        : undefined;
+    if (!mods || !profileId) return { ready: false };
+    const profile = state.persistent.profiles ? state.persistent.profiles[profileId] : undefined;
+    const modState = (profile && profile.modState) || {};
+    const mod = Object.prototype.hasOwnProperty.call(mods, modId) ? mods[modId] : null;
+    return { ready: true, profileId, mod, enabled: !!(modState[modId] && modState[modId].enabled === true) };
 }
 
 // Live "is Vortex genuinely blocked on a popup right now" signal -- see vortex-collection-tools' own
@@ -461,8 +505,8 @@ function getAllProfiles(api) {
     const state = api.store.getState();
     const profiles = (state.persistent && state.persistent.profiles) || {};
     return Object.keys(profiles)
-        .filter((id) => profiles[id] && profiles[id].gameId === GAME_ID)
-        .map((id) => ({ profileId: id, gameId: GAME_ID, name: profiles[id].name || id }));
+        .filter((id) => profiles[id] && profiles[id].gameId === skyrimGameId(api))
+        .map((id) => ({ profileId: id, gameId: skyrimGameId(api), name: profiles[id].name || id }));
 }
 
 // Mirrors gamebryo-plugin-management's own toPluginId (extensions/gamebryo-plugin-management/src/
@@ -560,7 +604,7 @@ function setModArchiveIdAction(api, modId, archiveId) {
     }
     const previous = mod.archiveId === undefined ? null : mod.archiveId;
     if (previous !== archiveId) {
-        api.store.dispatch({ type: 'SET_MOD_ARCHIVEID', payload: { gameId: GAME_ID, modId, archiveId } });
+        api.store.dispatch({ type: 'SET_MOD_ARCHIVEID', payload: { gameId: skyrimGameId(api), modId, archiveId } });
     }
     const after = getAllMods(api)[modId];
     return { previous, current: after && after.archiveId !== undefined ? after.archiveId : null };
@@ -604,8 +648,8 @@ function setHealthCheckSettings(api, body) {
 // is deliberately a dumb relay, no rule-resolution logic of its own.
 function applyRuleChange(api, modId, remove, add) {
     const { actions } = require('vortex-api');
-    if (remove) api.store.dispatch(actions.removeModRule(GAME_ID, modId, remove));
-    if (add) api.store.dispatch(actions.addModRule(GAME_ID, modId, add));
+    if (remove) api.store.dispatch(actions.removeModRule(skyrimGameId(api), modId, remove));
+    if (add) api.store.dispatch(actions.addModRule(skyrimGameId(api), modId, add));
 }
 
 // Batch form (2026-08-27) -- vortex-collection-tools' own Update Collection v2 was calling
@@ -631,8 +675,8 @@ function applyRuleChangesBatch(api, items) {
         if (!item || !item.modId || (!item.remove && !item.add)) {
             return { modId: item && item.modId, ok: false, error: 'must include modId and at least one of remove/add' };
         }
-        if (item.remove) api.store.dispatch(actions.removeModRule(GAME_ID, item.modId, item.remove));
-        if (item.add) api.store.dispatch(actions.addModRule(GAME_ID, item.modId, item.add));
+        if (item.remove) api.store.dispatch(actions.removeModRule(skyrimGameId(api), item.modId, item.remove));
+        if (item.add) api.store.dispatch(actions.addModRule(skyrimGameId(api), item.modId, item.add));
         return { modId: item.modId, ok: true };
     });
     return results;
@@ -649,7 +693,7 @@ function applyRuleChangesBatch(api, items) {
 // attributes object, no resolution logic here.
 function setModAttributes(api, modId, attributes) {
     const { actions } = require('vortex-api');
-    api.store.dispatch(actions.setModAttributes(GAME_ID, modId, attributes));
+    api.store.dispatch(actions.setModAttributes(skyrimGameId(api), modId, attributes));
 }
 
 // Dispatches Vortex's own real SET_MOD_ENABLED action (profile_management/actions/profiles.ts's
@@ -833,7 +877,7 @@ const REMOVE_DOWNLOAD_TIMEOUT_MS = 10000;
 function downloadFilePath(state, record) {
     if (!record || !record.localPath) return null;
     const pattern = state.settings && state.settings.downloads ? state.settings.downloads.path : undefined;
-    const gameId = (Array.isArray(record.game) && record.game[0]) || GAME_ID;
+    const gameId = (Array.isArray(record.game) && record.game[0]) || skyrimGameIdFromState(state);
     return path.join(_resolveDownloadPath(pattern, gameId), record.localPath);
 }
 
@@ -988,7 +1032,7 @@ let deployAllProgress = { active: false, text: '', percent: 0, done: false, erro
 function deployModsAction(api) {
     const { profileId } = getEnabledModKeys(api);
     if (!profileId) {
-        return Promise.reject(new Error(`No active profile found for game "${GAME_ID}".`));
+        return Promise.reject(new Error(`No active profile found for game "${skyrimGameId(api)}".`));
     }
     deployAllProgress = { active: true, text: 'Starting deploy...', percent: 0, done: false, error: null };
     return new Promise((resolve, reject) => {
@@ -1526,13 +1570,13 @@ function _resolveDownloadPath(rawPattern, gameId) {
 function getVortexPaths(api) {
     const state = api.store.getState();
     const installPattern = state.settings && state.settings.mods && state.settings.mods.installPath
-        ? state.settings.mods.installPath[GAME_ID]
+        ? state.settings.mods.installPath[skyrimGameId(api)]
         : undefined;
     const downloadPattern = state.settings && state.settings.downloads ? state.settings.downloads.path : undefined;
     return {
-        gameId: GAME_ID,
-        stagingFolder: _resolveInstallPath(installPattern, GAME_ID) || null,
-        downloadFolder: _resolveDownloadPath(downloadPattern, GAME_ID) || null,
+        gameId: skyrimGameId(api),
+        stagingFolder: _resolveInstallPath(installPattern, skyrimGameId(api)) || null,
+        downloadFolder: _resolveDownloadPath(downloadPattern, skyrimGameId(api)) || null,
     };
 }
 
@@ -1598,7 +1642,7 @@ function startServer(api) {
 
         if (req.method === 'GET' && req.url === '/health') {
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ ok: true, gameId: GAME_ID, version: VERSION }));
+            res.end(JSON.stringify({ ok: true, gameId: activeGameId(api), version: VERSION }));
             return;
         }
 
@@ -1608,7 +1652,7 @@ function startServer(api) {
             const rules = getModRules(api, modId);
             if (rules === null) {
                 res.writeHead(404, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ error: `No mod "${modId}" found in live state for ${GAME_ID}` }));
+                res.end(JSON.stringify({ error: `No mod "${modId}" found in live state for ${skyrimGameId(api)}` }));
                 return;
             }
             res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -1718,7 +1762,29 @@ function startServer(api) {
             const mods = getAllMods(api);
             const { profileId, enabledModKeys } = getEnabledModKeys(api);
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ gameId: GAME_ID, profileId, enabledModKeys, mods }));
+            res.end(JSON.stringify({ gameId: skyrimGameId(api), profileId, enabledModKeys, mods }));
+            return;
+        }
+
+        // One mod, small and fast (GET /mods is ~46 MB): its record as GET /mods shows it (attributes, rules,
+        // archiveId, installationPath, state) plus the active profile's enabled flag. `state` tells a caller
+        // whether the mod is really installed ("installed") or still "downloaded" / "installing".
+        const oneModMatch = req.url.match(/^\/mods\/([^/?]+)$/);
+        if (req.method === 'GET' && oneModMatch) {
+            const modId = decodeURIComponent(oneModMatch[1]);
+            const result = getOneMod(api, modId);
+            if (!result.ready) {
+                res.writeHead(503, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Vortex is still loading its mods; try again in a moment.' }));
+                return;
+            }
+            if (!result.mod) {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: `No mod "${modId}" found in live state for ${skyrimGameId(api)}` }));
+                return;
+            }
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ gameId: skyrimGameId(api), profileId: result.profileId, modId, enabled: result.enabled, state: result.mod.state || null, mod: result.mod }));
             return;
         }
 
@@ -1729,7 +1795,7 @@ function startServer(api) {
             const profiles = getAllProfiles(api);
             const { profileId: activeProfileId } = getEnabledModKeys(api);
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ gameId: GAME_ID, profiles, activeProfileId }));
+            res.end(JSON.stringify({ gameId: skyrimGameId(api), profiles, activeProfileId }));
             return;
         }
 
@@ -1790,7 +1856,7 @@ function startServer(api) {
                     return;
                 }
                 try {
-                    await deploySingleMod(api, GAME_ID, modId, enable);
+                    await deploySingleMod(api, skyrimGameId(api), modId, enable);
                     res.writeHead(200, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({ ok: true }));
                 } catch (err) {
@@ -1822,7 +1888,7 @@ function startServer(api) {
                     const { profileId } = getEnabledModKeys(api);
                     if (!profileId) {
                         res.writeHead(409, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify({ error: `No active profile found for game "${GAME_ID}".` }));
+                        res.end(JSON.stringify({ error: `No active profile found for game "${skyrimGameId(api)}".` }));
                         return;
                     }
                     setModEnabledAction(api, profileId, modId, enable);
@@ -1855,7 +1921,7 @@ function startServer(api) {
                     const { profileId } = getEnabledModKeys(api);
                     if (!profileId) {
                         res.writeHead(409, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify({ error: `No active profile found for game "${GAME_ID}".` }));
+                        res.end(JSON.stringify({ error: `No active profile found for game "${skyrimGameId(api)}".` }));
                         return;
                     }
                     const results = setModsEnabledBatch(api, profileId, items);
@@ -1886,7 +1952,7 @@ function startServer(api) {
                     return;
                 }
                 try {
-                    await createMod(api, GAME_ID, mod);
+                    await createMod(api, skyrimGameId(api), mod);
                     res.writeHead(200, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({ ok: true }));
                 } catch (err) {
@@ -1916,7 +1982,7 @@ function startServer(api) {
                     return;
                 }
                 try {
-                    registerLocalDownload(api, GAME_ID, { id, fileName, fileSize });
+                    registerLocalDownload(api, skyrimGameId(api), { id, fileName, fileSize });
                     res.writeHead(200, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({ ok: true, archiveId: id }));
                 } catch (err) {
@@ -1943,7 +2009,7 @@ function startServer(api) {
                     return;
                 }
                 try {
-                    setDownloadInstalled(api, GAME_ID, { id, modId });
+                    setDownloadInstalled(api, skyrimGameId(api), { id, modId });
                     res.writeHead(200, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({ ok: true }));
                 } catch (err) {
@@ -2034,7 +2100,7 @@ function startServer(api) {
                     return;
                 }
                 try {
-                    const results = await createModsBatch(api, GAME_ID, mods);
+                    const results = await createModsBatch(api, skyrimGameId(api), mods);
                     res.writeHead(200, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({ ok: true, results }));
                 } catch (err) {
@@ -2064,7 +2130,7 @@ function startServer(api) {
                 }
                 try {
                     const { profileId } = getEnabledModKeys(api);
-                    modIds.forEach((modId) => removeModRecordOnly(api, GAME_ID, profileId, modId));
+                    modIds.forEach((modId) => removeModRecordOnly(api, skyrimGameId(api), profileId, modId));
                     res.writeHead(200, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({ ok: true, profileId }));
                 } catch (err) {
@@ -2090,7 +2156,7 @@ function startServer(api) {
                     return;
                 }
                 try {
-                    await removeMods(api, GAME_ID, modIds);
+                    await removeMods(api, skyrimGameId(api), modIds);
                     res.writeHead(200, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({ ok: true }));
                 } catch (err) {
@@ -2146,7 +2212,7 @@ function startServer(api) {
         if (req.method === 'GET' && req.url === '/downloads') {
             const files = getAllDownloads(api);
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ gameId: GAME_ID, files }));
+            res.end(JSON.stringify({ gameId: skyrimGameId(api), files }));
             return;
         }
 
@@ -2315,11 +2381,11 @@ function main(context) {
         // including at Vortex's own startup, when it loads whichever game was last active
         // (confirmed via real source, gamemode_management/GameModeManager.ts: only fires after the
         // game's own discovery/tool-validation chain resolves and the profile has switched) -- not
-        // merely "Vortex's own window opened". Filtered to this extension's own GAME_ID scope; a
-        // player who isn't even managing Skyrim SE right now should never have anything of this
+        // merely "Vortex's own window opened". Filtered to the two Skyrim games; a
+        // player who isn't even managing Skyrim right now should never have anything of this
         // extension's spawned in the background.
         context.api.events.on('gamemode-activated', (gameId) => {
-            if (gameId !== GAME_ID) return;
+            if (!SKYRIM_GAMES.includes(gameId)) return;
             triggerPluginModPacerCheck(context.api);
         });
     });
@@ -2331,13 +2397,14 @@ function main(context) {
 // ever calls this module as a plain function, and never looks at any property on it, so attaching
 // these doesn't change how Vortex loads or runs the extension at all.
 main.__testables = {
+    getOneMod,
     findModPacerInstallPath, findModPacerNodePath, shouldRunModPacerCheck, runModPacerCheck, triggerPluginModPacerCheck,
     modPacerSetUpState, MODPACER_NOT_SET_UP_MESSAGE, readModPacerCheckReason,
     notifyBodyFromCompatShape, sendBridgeNotification, getVortexPaths, MODPACER_INFO_PATH, getNeedToDeploy,
     readModPacerInfo, getModPacerAddress, resolveModPacerExe, pingModPacer, ensureModPacerRunning, openModPacerOnDemand,
     openNotificationUrl, MODPACER_START_FAILED_MESSAGE, MODPACER_NOT_RUN_YET_NOTE,
     checkModPacerExePath, MODPACER_SETTINGS_DESCRIPTION, MODPACER_NOT_A_PROGRAM_WARNING,
-    startServer, stopServer, PORT, checkRequestGuard,
+    startServer, stopServer, PORT, checkRequestGuard, activeGameId, skyrimGameId, SKYRIM_GAMES,
     COMPANIONS, OLD_COPY_MESSAGE, OLD_EXTENSION_ID, notifyOldCopyInstalled, oldCopyFolderExists,
     resetOldCopyNotice: () => { oldCopyNoticeShown = false; },
     getHealthCheckSettings, setHealthCheckSettings, setModArchiveIdAction,

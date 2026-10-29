@@ -105,6 +105,18 @@ Want your mod listed? Publish it on the SkyrimNet Plugin Hub and ModPacer will f
 - ModPacer asks GitHub (where the Hub keeps its files) for cover pictures and descriptions, but only for the mods currently on your screen. This request sends nothing about you and works just like opening the page yourself. You can turn pictures off with **Show mod pictures** in **Settings**.
 - Apart from that, the only thing ModPacer sends is the mod's name (its id on the Hub) to fateless.ai when you install, update, or open a page. Nothing about you.
 
+## Fixing a stuck update
+
+If a mod keeps offering an update you already installed, ModPacer and your mod manager are out of sync. This can happen when a mod's author changes the mod's name, or the names of its files. The easiest fix is a fresh start for that one mod:
+
+1. Completely remove the mod in your mod manager.
+   * **Vortex:** Remove the mod, and remove its archive too.
+   * **MO2:** Remove the mod from your mod list, then delete its file from your Downloads tab.
+2. In ModPacer, click **Check now**.
+3. Click **Install** next to the mod to download it fresh.
+
+If the same mod gets stuck again, please tell us. In ModPacer, open **Settings** and click **Open log folder**. Share your `update.log` file on our [Issues page](https://github.com/awesmdiver/modpacer/issues) along with the mod's name so we can get it fixed. (Please don't send `config.json`.) The log only exists if **Enable logging** is turned on in **Settings**, so switch it on first and let the problem happen once more.
+
 ## Stuck?
 
 - **"Vortex isn't answering":** Check that Vortex is open and has no pop-ups waiting, then click **Retry**. Seeing **Waiting for Vortex...** is completely normal while Vortex starts or installs a collection. ModPacer keeps trying on its own.

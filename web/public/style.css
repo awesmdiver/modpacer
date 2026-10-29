@@ -64,13 +64,13 @@ button:disabled, button.primary:disabled { background:var(--panel); border-color
 .icons .done { color:var(--status-success) }
 .fomod { color:var(--muted); display:inline-flex; align-items:center }
 .fomod svg { display:block }
-.pill { font-size:0.72rem; border-radius:10px; padding:2px 9px; white-space:nowrap; display:inline-block; border:1px solid currentColor }
-.p-upd { color:var(--status-info) }
-.p-done { color:var(--status-success) }
-.p-ok { color:var(--muted) }
-.p-nx { color:var(--status-warning) }
-.p-dl { color:var(--status-info) }
-.p-err { color:var(--status-error) }
+/* A row status: a small filled dot and a word, no border (the same look as the monitoring dots). */
+.st { font-size:0.8rem; color:var(--muted); white-space:nowrap }
+.sdot { display:inline-block; width:0.6rem; height:0.6rem; border-radius:50%; margin-right:0.45rem; background:var(--muted); vertical-align:baseline }
+.sdot.ok { background:var(--status-success) }
+.sdot.warn { background:var(--status-warning) }
+.sdot.info { background:var(--status-info) }
+.sdot.off { background:color-mix(in srgb, var(--text) 40%, var(--bg)) }
 .changes { grid-column:1 / -1; font-size:0.8rem; color:var(--text); background:var(--bg); border-radius:6px; padding:8px 12px; margin-top:4px }
 .link-ood-short { display:none }
 @media (max-width:640px) { .link-ood-long { display:none } .link-ood-short { display:inline } }
@@ -79,13 +79,14 @@ button:disabled, button.primary:disabled { background:var(--panel); border-color
 .ch-heading { font-weight:600; color:var(--text); margin-top:6px }
 .ch-body.ch-collapsed { max-height:4.2em; overflow:hidden; position:relative; mask-image:linear-gradient(to bottom, black 60%, transparent 100%) }
 .ch-toggle { display:inline-block; margin-top:4px; color:var(--accent-text); font-size:0.75rem; text-decoration:none }
-.pill + .ch-toggle { margin-left:8px }
+.st + .ch-toggle { margin-left:8px }
 .bar { height:5px; background:var(--line); border-radius:3px; margin-top:6px; overflow:hidden; width:120px }
 .bar i { display:block; height:5px; background:var(--accent) }
 /* Working, but no real percentage to show: a short block sliding back and forth (still when motion is reduced). */
 .bar.busy i { width:35%; animation:bar-busy 1.3s ease-in-out infinite alternate }
 @keyframes bar-busy { from { margin-left:0 } to { margin-left:65% } }
 @media (prefers-reduced-motion: reduce) { .bar.busy i { animation:none; width:100% } }
+.step-line { font-size:0.75rem; text-align:right; min-height:1.2em; line-height:1.2em }
 .group-h { display:flex; justify-content:space-between; align-items:center; color:var(--muted); font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; margin:20px 0 6px }
 .legend { text-transform:none; letter-spacing:0; display:flex; gap:14px }
 .legend span { display:inline-flex; gap:5px; align-items:center }
@@ -133,7 +134,7 @@ button:disabled, button.primary:disabled { background:var(--panel); border-color
 .hub-ico img { width:16px; height:16px }
 .hub-ico:hover img, .hub-ico:focus-visible img { filter:brightness(1.25) } /* a brand mark: no colour change, just a touch brighter */
 .counts { color:var(--muted); font-size:0.72rem; margin-top:2px }
-.nsfw-pill { display:inline-block; border:1px solid var(--status-warning); color:var(--status-warning); border-radius:999px; padding:0 8px; font-size:0.68rem; font-weight:600; letter-spacing:0.03em; margin-left:8px; vertical-align:middle }
+.nsfw-pill { display:inline-block; border:1px solid var(--status-warning); color:var(--status-warning); border-radius:6px; padding:0 8px; font-size:0.68rem; font-weight:600; letter-spacing:0.03em; margin-left:8px; vertical-align:middle }
 .ni-more { grid-column:1 / -1; margin-top:2px }
 .ni-more .tagline { color:var(--muted); font-size:0.82rem }
 .disabled-text { min-height:4.2em; margin:0 } /* three lines whatever the text, so the dialog never changes size */

@@ -9,6 +9,7 @@ const appConfig = require('./lib/app-config');
 const engine = require('./lib/plugin-updater-engine');
 const checkLock = require('./lib/check-lock');
 const { detectSkyrimInstallPath } = require('./lib/skyrim-detect');
+const skyrimEdition = require('./lib/skyrim-edition');
 const firstRunSetup = require('./lib/first-run-setup');
 const helperBundle = require('./lib/helper-bundle');
 const { logUpdate, logArea, logAreaOnce, noteSecret, logFile } = require('./lib/update-log');
@@ -335,6 +336,7 @@ function buildApp() {
     // The page tells the log how long an Update all took (the page is the one that runs the batch). Nothing is sent to Vortex.
     app.post('/api/update-batch-done', (req, res) => {
         engine.closeBatch();
+        engine.logLeftOutOfUpdateAll();
         engine.runLeftoverCheck('after an Update all'); // in the background; the mod list is the one already held
         res.json({ ok: require('./lib/update-log').logBatchSummary(req.body || {}) });
     });
@@ -498,7 +500,7 @@ function buildApp() {
         res.json(settingsPayload(appConfig.saveConfig(patch)));
     });
 
-    // Step 2: the saved Skyrim folder, or the auto-detected one, and whether it really holds SkyrimSE.exe.
+    // Step 2: the saved Skyrim folder, or the auto-detected one, and whether it really holds SkyrimSE.exe or SkyrimVR.exe.
     app.get('/api/setup/skyrim', (req, res) => {
         const saved = appConfig.loadConfig().skyrimInstallPath;
         const found = saved || detectSkyrimInstallPath();
@@ -528,11 +530,11 @@ function buildApp() {
     // answer). The page asks again every few seconds while a box is empty. read = false when Vortex/the Bridge can't be asked right now
     // (Vortex closed, no Bridge, an older Bridge) -- the page then shows empty fields, with `reason` choosing the one plain line:
     // 'vortex-closed' (Vortex is not running) | 'no-bridge' (Vortex is open but the Bridge does not answer). Only the current game's
-    // folders count (anything but Skyrim SE is ignored), and only a folder that really exists is handed back.
+    // folders count (anything but Skyrim SE or VR is ignored), and only a folder that really exists is handed back.
     app.get('/api/setup/vortex-folders', async (req, res) => {
         if (modManager.getModManager() !== 'vortex') return res.json({ read: false, reason: null, downloadFolder: null, stagingFolder: null });
         const paths = await vortexHelperClient.getPaths();
-        const usable = paths && (!paths.gameId || paths.gameId === 'skyrimse');
+        const usable = paths && (!paths.gameId || skyrimEdition.GAME_IDS.includes(paths.gameId));
         const existing = (p) => (typeof p === 'string' && p && firstRunSetup.folderProblem(p, 'downloads', null) === null ? p : null);
         const downloadFolder = usable ? existing(paths.downloadFolder) : null;
         const stagingFolder = usable ? existing(paths.stagingFolder) : null;
@@ -702,7 +704,7 @@ async function runHeadlessCheck(opts = {}) {
     checkLock.acquire();
     try { await runHeadlessCheckInner(opts); } finally { checkLock.release(); }
 }
-async function runHeadlessCheckInner({ waitLimitMs, waitPollMs, settleLimitMs } = {}) {
+async function runHeadlessCheckInner({ waitLimitMs, waitPollMs, settleLimitMs, downloadLimitMs = 20 * 60 * 1000 } = {}) {
     // The Helper starts this check while Vortex is still loading: wait, quietly, until Vortex is really ready (the same
     // two-good-reads rule the page uses) before the first real read. Never ready in time -> a clean exit, nothing half-checked.
     // Nothing to wait for when the updater is not set up yet: the check just reports that.
@@ -723,10 +725,11 @@ async function runHeadlessCheckInner({ waitLimitMs, waitPollMs, settleLimitMs } 
         return;
     }
     recordCheckResult(null);
-    // Downloads already happen inside check() when autoDownload is on -- give them a moment to
-    // land before reporting what's new, same "give async work started inside check a beat"
-    // reasoning as the dashboard's own polling.
-    await new Promise((r) => setTimeout(r, 1500));
+    // Downloads already happen inside check() when autoDownload is on, in the background: this process must not end while one is still
+    // running (2026-10-28: the background check exited a second after starting Kinship and Magelight UI, which left Magelight's file cut
+    // off and Kinship's install step unfinished). Wait for all of them, up to a limit.
+    await Promise.race([engine.whenAutoDownloadsSettled(), new Promise((r) => setTimeout(r, downloadLimitMs).unref())]);
+    await new Promise((r) => setTimeout(r, 200));
     const allRows = engine.getState().rows;
     const newlyDownloaded = updateRowsToReport(allRows);
     console.log(`[modpacer] Checked ${allRows.filter((r) => !r.notInstalled).length} mod(s), ${newlyDownloaded.length} with an update.`);

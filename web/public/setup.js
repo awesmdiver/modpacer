@@ -91,8 +91,8 @@ const setupUi = (function () {
                 let foundText = 'Found it! Press Browse if you need a different copy of Skyrim.';
                 statusHtml = dot('ok', foundText);
             }
-            else if (state === 'wrong') statusHtml = dot('err', '<code>SkyrimSE.exe</code> isn\'t in that folder. Make sure you pick the main game folder.');
-            else statusHtml = dot('warn', 'We couldn\'t find Skyrim. Please choose the folder containing <code>SkyrimSE.exe</code>.');
+            else if (state === 'wrong') statusHtml = dot('err', '<code>SkyrimSE.exe</code> or <code>SkyrimVR.exe</code> isn\'t in that folder. Make sure you pick the main game folder.');
+            else statusHtml = dot('warn', 'We couldn\'t find Skyrim. Please choose the folder containing <code>SkyrimSE.exe</code> or <code>SkyrimVR.exe</code>.');
         }
         return `<h2>Where is Skyrim?</h2><p class="hint">We need your Skyrim folder to check which plugins you have.</p>
             <div class="su-row">${pathBox(sk && sk.path, 'skyrim')}${browseBtn('browse-skyrim', state === 'found' || !sk ? '' : 'primary')}</div>

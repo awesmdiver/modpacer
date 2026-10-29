@@ -4,7 +4,7 @@
 
 ModPacer is a Windows tool that connects your mod manager to the [SkyrimNet Plugin Hub](https://fateless.ai/plugins). It runs in your system tray and opens in your web browser. It checks the SkyrimNet mods you have installed, shows which ones have a new version, and lists the Hub mods you do not have yet. One click installs or updates them for you.
 
-It works with **Vortex** and **Mod Organizer 2**.
+It works with **Vortex** and **Mod Organizer 2**, for **Skyrim Special Edition and Skyrim VR**.
 
 ## Why use it?
 
@@ -23,7 +23,7 @@ ModPacer does that for you. Open it, see at a glance what is out of date and wha
 
 ## 🚀 Getting started
 
-1. **Run `ModPacer-Setup-1.3.0.exe`.** It installs just for you (no administrator needed) and tells you what to expect as it goes. *(Prefer no installer? The portable zip works too: unzip it anywhere you like.)*
+1. **Run `ModPacer-Setup-1.4.0.exe`.** It installs just for you (no administrator needed) and tells you what to expect as it goes. *(Prefer no installer? The portable zip works too: unzip it anywhere you like.)*
 2. **ModPacer opens in your browser** when the installer finishes. If it doesn't, double-click its small icon in your system tray down by your clock (or right-click it and choose **Open ModPacer**). You'll also find ModPacer in your Start Menu. *(With the portable zip, double-click `ModPacer.exe`, or run `start.bat`.)*
 3. **Follow the guided setup.** A pop-up goes step-by-step to help you pick your mod manager and finds your Skyrim folder. If you choose Vortex, it points you to the Vortex Bridge that comes in the package and shows you how to add it to Vortex (drop its zip onto Vortex's Extensions page).
 4. **Let it check.** Once setup is done, ModPacer looks for new versions right away.

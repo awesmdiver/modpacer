@@ -231,7 +231,7 @@ function linkOutOfDateWords(row) {
     };
 }
 // The green ⬇ -- shows only once the archive is genuinely on disk (status downloaded), never for
-// "downloading" or "updated". This is what replaces the old "Downloaded ✓" pill's own meaning.
+// "downloading" or "updated". This is what replaces the old "Downloaded" status's own meaning.
 function downloadedIcon(row) {
     if (row.status !== 'downloaded') return '';
     return `<span class="done" title="Downloaded" aria-label="Downloaded" role="img">&#11015;</span>`;
@@ -254,7 +254,11 @@ function hubIcon(row) {
     if (!row.hubUrl) return '';
     return `<a class="hub-ico" href="${escapeHtml(row.hubUrl)}" target="_blank" rel="noopener" title="${HUB_ICON_TEXT}" aria-label="${HUB_ICON_TEXT}" role="img">${HUB_SVG}</a>`;
 }
-// A small amber-outlined pill after the title of an adult (NSFW) listing, wherever it shows.
+// A row status: a small coloured dot and a word, no border (kind: ok = green, info = blue, warn = amber, off = grey).
+function statHtml(kind, text, attrs = '') {
+    return `<span class="st"${attrs}><span class="sdot ${kind}"></span>${text}</span>`;
+}
+// A small amber-outlined tag after the title of an adult (NSFW) listing, wherever it shows.
 function nsfwPill(row) {
     return row.nsfw ? '<span class="nsfw-pill" title="Adult content">NSFW</span>' : '';
 }
@@ -323,7 +327,7 @@ function renderRow(row) {
     if (inProgress) {
         // queued -> "Waiting to download..." with no bar; downloading -> real bytes, and a bar only when
         // the real size is known (rules live in row-state.js).
-        action = `<span class="pill p-dl">${escapeHtml(inProgress.label)}</span>`
+        action = statHtml('info', escapeHtml(inProgress.label))
             + (inProgress.bar != null ? `<div class="bar"><i style="width:${inProgress.bar}%"></i></div>` : '');
     } else if (row.oldCopyLeft) {
         // The new version is in, but the old copy (its Vortex record, its archive, its staging folder) is not fully gone: never a tick. The error line under
@@ -331,7 +335,7 @@ function renderRow(row) {
         // While Try again runs the row shows the usual working word, so the click is never silent; then it finishes, or says what is left.
         action = updateWorkHtml(row) || `<button data-action="retry-carry-over" data-id="${escapeHtml(row.id)}"${batchRunning ? ' disabled' : ''}>Try again</button>`;
     } else if (row.status === 'downloaded') {
-        // No "Downloaded ✓" pill here anymore -- the ⬇ icon above now carries that same meaning
+        // No "Downloaded" status here anymore -- the ⬇ icon above now carries that same meaning
         // (director, from the live page: repeated with an Update button right next to it, the
         // pill was saying the same thing twice).
         if (updateWork) {
@@ -354,9 +358,9 @@ function renderRow(row) {
             || `<div class="muted" style="font-size:0.75rem;text-align:right">${unchecked ? "Installed. ModPacer couldn't check its rules because Vortex was busy." : "Installed, but some of its rules didn't carry over."}</div>`
             + `<button data-action="retry-carry-over" data-id="${escapeHtml(row.id)}"${batchRunning ? ' disabled' : ''}>Try again</button>`;
     } else if (row.status === 'deployed') {
-        action = `<span class="pill p-done">Deployed &#10003;</span>` + pluginsNoteHtml(row);
+        action = statHtml('ok', 'Deployed') + pluginsNoteHtml(row);
     } else if (row.status === 'updated') {
-        action = `<span class="pill p-done">${row.installedNew ? 'Installed' : 'Updated'} &#10003;</span>` + pluginsNoteHtml(row);
+        action = statHtml('ok', row.installedNew ? 'Installed' : 'Updated') + pluginsNoteHtml(row);
     } else if (row.status === 'update_available') {
         action = downloadFolderMissing
             ? `<button class="primary" disabled title="Pick a download folder in Settings first">Download</button>`
@@ -388,11 +392,11 @@ function renderRow(row) {
                 + `<button class="btn-muted" data-action="set-known-version" data-id="${escapeHtml(row.id)}"${off}>It's ${escapeHtml(row.latestVersion)}</button>` : '');
     } else if (row.status === 'up_to_date' && row.versionSetByPlayer && row.vortexModId && !row.vortexInfoFromCache) {
         // The version was typed in by "It's <version>": a way back if that was the wrong button.
-        action = `<span class="pill p-ok">Up to date</span><a href="#" class="ch-toggle" data-action="update-anyway" data-id="${escapeHtml(row.id)}">Update anyway</a>`;
+        action = `${statHtml('ok', 'Up to date')}<a href="#" class="ch-toggle" data-action="update-anyway" data-id="${escapeHtml(row.id)}">Update anyway</a>`;
     } else if (row.status === 'up_to_date' || row.status === 'unknown_version') {
-        action = `<span class="pill p-ok">${row.status === 'unknown_version' ? "Can't check version" : 'Up to date'}</span>`;
+        action = row.status === 'unknown_version' ? statHtml('warn', "Can't check version") : statHtml('ok', 'Up to date');
     } else if (row.status === 'not_on_hub') {
-        action = `<span class="pill p-ok">Not on the Hub</span>`;
+        action = statHtml('off', 'Not on the Hub');
     }
     if (row.isProgram) { // never Download, Update or Install: only the download page (the status and versions above stay true)
         if (row.status === 'update_available' || row.status === 'needs_you') action = programButton(row);
@@ -402,7 +406,7 @@ function renderRow(row) {
 
     // A row never shows "Updating..." and a failure sentence together: the old line goes the moment a try starts, and a new one appears only if it ends badly.
     if (row.error && !updateWorkHtml(row)) {
-        changesHtml += `<div class="changes" style="color:var(${row.errorWarn ? '--status-warning' : '--status-error'})">${escapeHtml(row.error)}</div>`;
+        changesHtml += `<div class="changes" style="color:var(${row.errorWarn ? '--status-warning' : '--status-error'})"${row.errorDetail ? ` title="${escapeHtml(row.errorDetail)}"` : ''}>${escapeHtml(row.error)}</div>`;
     }
     // "What's new" stays visible once downloaded too, not just while still pending (director,
     // 2026-09-30: "the release notes he saw earlier are gone") -- it's still the same real
@@ -448,6 +452,7 @@ function renderDownloadFolderBanner(missing) {
 // is actually refused, versions just can't be freshly confirmed right now.
 // Words: HELPER_BUSY_TEXT first; after a Retry that still gets no answer, HELPER_STILL_TEXT in the same place.
 const HELPER_BUSY_TEXT = "Vortex is open, but the Vortex Bridge isn't answering. Vortex may be busy. Press Retry to try again.";
+const OTHER_GAME_TEXT = 'Switch Vortex to Skyrim and click Check now.';
 const HELPER_STILL_TEXT = 'Still no answer. Vortex may still be busy. Try again in a moment.';
 function renderVortexHelperBanner(helperState) {
     // While an Update all removes old mods or waits for a busy Vortex, its own line says so (the Retry banner would offer a second path while the first is still waiting).
@@ -458,6 +463,11 @@ function renderVortexHelperBanner(helperState) {
         <div class="callout callout--warning callout--plain">
             <div class="callout__title">&#9888;&#65039; ${retryStage === 'still' ? HELPER_STILL_TEXT : HELPER_BUSY_TEXT}</div>
             <div class="callout__actions"><button class="primary" data-action="retry-helper"${busy ? ' disabled' : ''}>${busy ? 'Retrying…' : 'Retry'}</button></div>
+        </div>`;
+    } else if (helperState === 'vortex_other_game' && !batchLine) {
+        $('vortexHelperBanner').innerHTML = `
+        <div class="callout callout--warning callout--plain">
+            <div class="callout__title">&#9888;&#65039; ${OTHER_GAME_TEXT}</div>
         </div>`;
     } else if (batchLine) {
         const waiting = waitingForVortex || Object.values(liveProgress).some((p) => p && p.waiting);
@@ -821,12 +831,12 @@ function notInstalledAction(row) {
     const mo2 = currentManager === 'mo2';
     const idAttr = `data-id="${escapeHtml(row.id)}"`;
     const inProgress = rowState.inProgressView(row);
-    if (inProgress) return `<span class="pill p-dl">${escapeHtml(inProgress.label)}</span>` + (inProgress.bar != null ? `<div class="bar"><i style="width:${inProgress.bar}%"></i></div>` : '');
-    if (installingIds.has(row.id) && row.status === 'update_available') return `<span class="pill p-dl">Downloading\u2026</span><div class="bar busy"><i></i></div>`;
+    if (inProgress) return statHtml('info', escapeHtml(inProgress.label)) + (inProgress.bar != null ? `<div class="bar"><i style="width:${inProgress.bar}%"></i></div>` : '');
+    if (installingIds.has(row.id) && row.status === 'update_available') return `${statHtml('info', 'Downloading\u2026')}<div class="bar busy"><i></i></div>`;
     if (row.status === 'downloaded') {
         const work = updateWorkHtml(row);
         if (work) return work;
-        if (mo2) return `<span class="pill p-done">Downloaded &#10003;</span>`;
+        if (mo2) return statHtml('ok', 'Downloaded');
         if (row.fomodMismatch || (row.isFomod && row.updatePreview)) return `<button class="primary" data-action="open-wizard" ${idAttr}${batchRunning ? ' disabled' : ''}>Install</button>`;
         if (row.updatePreview) return `<button class="primary" data-action="update" ${idAttr}${batchRunning ? ' disabled' : ''}>Install</button>`;
         if (row.updateUnavailableReason) return `<div class="muted" style="font-size:0.75rem;text-align:right">${escapeHtml(rowState.waitingLine(row.updateUnavailableReason, vortexStartingByPlayer))}</div>`;
@@ -1294,28 +1304,35 @@ document.addEventListener('click', async (e) => {
 let confirmPluginId = null;
 let confirmBatchIds = null; // set while the confirm box is for "Update all"
 let confirmInstallAll = null; // set while the confirm box is for "Install all": { ids, skipped }
-// What an updating row shows in place of its button: ONE word the whole time, with an honest moving bar (never a percentage): "Updating…" for a
-// mod that replaces an installed one, "Installing…" for one that is new to Vortex (the same fact that decides the button's word). It appears the
-// instant the button is pressed and stays until the update is done ("Updated ✓" / "Installed ✓") or fails; the fine steps live in logs/update.log
-// only. If Vortex stopped answering it adds a "Waiting for Vortex…" note; if Vortex shows a dialog that blocks it, that is named. A row still
-// waiting its turn in Update all says "Waiting…".
+// What an updating row shows in place of its button: the word ("Updating…" for a mod that replaces an installed one, "Installing…" for one new to
+// Vortex, the same fact that decides the button's word) and, under it, a short muted line naming the real step ModPacer is on (STEP_NOTES, from
+// state.updateProgress). A step is shown only once it has really begun, nothing is estimated; before the first step the word stands alone. The line's
+// height is always reserved so the row never jumps. It appears the instant the button is pressed and stays until "Updated" / "Installed" or a failure.
+// "Waiting for Vortex…" and the second pass of Update all use this same line. A row still waiting its turn in Update all says "Waiting…".
 // workingIds: rows whose Update was just pressed, while the page reads Vortex (is the mod disabled?) or fetches what the confirm card needs.
 const workingIds = new Set();
+const STEP_NOTES = {
+    extracting: 'Unpacking the download…',
+    removing_old: 'Removing the old version…',
+    installing: 'Installing in Vortex…',
+    waiting_for_vortex: 'Waiting for Vortex…',
+    enabling_plugins: 'Enabling plugins…',
+    carrying_rules: 'Applying your load order rules…',
+    deleting_old_download: 'Deleting the old download…',
+};
 function workLabel(row) { return (row.updatePreview && row.updatePreview.notInVortex) || row.notInstalled ? 'Installing…' : 'Updating…'; }
 function markWorking(ids) { for (const id of ids) workingIds.add(id); if (lastRenderedState) renderPlugins(lastRenderedState); }
 function workingDone(ids, { render = true } = {}) { for (const id of ids) workingIds.delete(id); if (render && lastRenderedState) renderPlugins(lastRenderedState); }
 function updateWorkHtml(row) {
     const prog = liveProgress[row.id];
-    const note = (text) => `<div class="muted" style="font-size:0.75rem;text-align:right">${escapeHtml(text)}</div>`;
-    if (prog && prog.waiting) return `<span class="pill p-dl">${escapeHtml(workLabel(row))}</span>` + note('Waiting for Vortex…');
-    if (prog || row.id === updatingId || workingIds.has(row.id)) {
-        const label = workLabel(row);
-        return `<span class="pill p-dl" data-update-step>${escapeHtml(label)}</span><div class="bar busy"><i></i></div>`;
+    const line = (text, attrs = '') => `<div class="muted step-line"${attrs}>${text ? escapeHtml(text) : '&nbsp;'}</div>`;
+    const word = statHtml('info', escapeHtml(workLabel(row)), ' data-update-step');
+    if (prog && prog.waiting) return word + line('Waiting for Vortex…');
+    if (prog || row.id === updatingId || workingIds.has(row.id)) return word + line(prog && STEP_NOTES[prog.step] || '');
+    if (batchDeferred.has(row.id)) { // installed, its old copy waits for the second pass: the same word until the whole mod is done
+        return removingOldMods ? word + line('Removing the old version…', ' data-removing-old-mods-row') : word + line('Queued to remove the old version…');
     }
-    if (batchDeferred.has(row.id)) { // installed, its old copy waits for the second pass: the same Updating... until the whole mod is done
-        return removingOldMods ? `<span class="pill p-dl" data-removing-old-mods-row>Removing old mods</span><div class="bar busy"><i></i></div>` : `<span class="pill p-dl" data-update-step>${escapeHtml(workLabel(row))}</span><div class="bar busy"><i></i></div>`;
-    }
-    if (batchWaiting.has(row.id)) return `<span class="pill p-dl">Waiting…</span>`;
+    if (batchWaiting.has(row.id)) return statHtml('off', 'Waiting…');
     return '';
 }
 // A mod that is not in Vortex yet: the button says Install, and a short note says why.
@@ -1325,7 +1342,7 @@ function notInVortexNote(row) {
 }
 // Next to an installed mod: nothing when plugins were turned on (only trouble gets a line): one short amber line when none of them could be.
 function pluginsNoteHtml(row) {
-    return row.pluginsAllFailed ? `<div class="req-warn" data-plugins-note style="text-align:right">&#9888;&#65039; Couldn't turn on the plugins. Check Vortex's plugin list.</div>` : '';
+    return row.pluginsAllFailed ? `<div class="req-warn" data-plugins-note style="text-align:right">&#9888;&#65039; Check Vortex to make sure these plugins are enabled.</div>` : '';
 }
 function previousVersionText(cfg) { return cfg.deleteOldDownloadAfterUpdate ? 'Delete' : 'Keep'; }
 function collectionLineHtml(row) {
@@ -2065,7 +2082,7 @@ function folderWarnBox(input) {
 async function typedFolderProblem(key, folder) {
     if (key === 'skyrimInstallPath') {
         const r = await api('POST', '/api/setup/skyrim-check', { path: folder });
-        return r.state === 'found' ? '' : "SkyrimSE.exe isn't in that folder. Make sure you pick the main game folder.";
+        return r.state === 'found' ? '' : "SkyrimSE.exe or SkyrimVR.exe isn't in that folder. Please pick the main game folder.";
     }
     if (key === 'downloadFolder' || key === 'vortexStagingFolder') {
         const r = await api('POST', '/api/setup/folder-check', { path: folder, kind: key === 'downloadFolder' ? 'downloads' : 'mods' });

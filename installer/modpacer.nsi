@@ -5,6 +5,7 @@
 ;
 ; Required defines (all supplied by build-installer.ps1):
 ;   MP_VERSION    e.g. 1.0.0      shown in Windows' Apps list and on the pages
+;   MP_NUMVERSION the digits-only start of it (1.3.1 for 1.3.1-vr-test1), for the numeric file-version field
 ;   MP_STAGE_DIR  the staged package (release-staging), the tray program ModPacer.exe included
 ;   MP_OUTFILE    the .exe to write
 ;   MP_ICON       launcher\modpacer.ico (the installer, the uninstaller and the Apps entry all wear the logo)
@@ -56,7 +57,7 @@ SetCompressor /SOLID lzma
 ShowInstDetails show
 ShowUnInstDetails show
 
-VIProductVersion "${MP_VERSION}.0"
+VIProductVersion "${MP_NUMVERSION}.0"
 VIAddVersionKey "ProductName" "${MP_NAME}"
 VIAddVersionKey "CompanyName" "${MP_PUBLISHER}"
 VIAddVersionKey "FileDescription" "${MP_NAME} installer"
@@ -379,6 +380,7 @@ Section "Uninstall"
             Delete "$INSTDIR\pending-deploy.json"
             Delete "$INSTDIR\pending-old-copies.json"
             Delete "$INSTDIR\install-info.json"
+            Delete "$INSTDIR\match-records.json"
             Delete "$INSTDIR\tray-notice-shown" ; the tray program's "first start" flag (launcher: NoticeFlagName)
             RMDir /r "$INSTDIR\cache"
             RMDir /r "$INSTDIR\logs"
