@@ -97,7 +97,7 @@
     // "An update is waiting": a mod found in the SkyrimNet install (never a Hub listing under Mods not installed, which also carry the status
     // update_available) with one of these statuses. The Mods page's Updates section and tile use this same test, so the two numbers cannot drift.
     function isWaitingUpdate(r) {
-        return !r.notInstalled && ['update_available', 'queued', 'downloading', 'downloaded'].includes(r.status);
+        return !r.notInstalled && (['update_available', 'queued', 'downloading', 'downloaded'].includes(r.status) || (r.status === 'needs_you' && !!r.releaseChoice)); // a release with several files waits for the person's pick: still an update
     }
     function countWaitingUpdates(rows) {
         return (rows || []).filter(isWaitingUpdate).length;

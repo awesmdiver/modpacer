@@ -195,9 +195,26 @@ function buildApp() {
     });
 
     app.post('/api/plugins/:id/download', async (req, res) => {
-        const row = await engine.downloadPlugin(req.params.id, { userAsked: true, how: require('./lib/download-log').HOWS[req.body && req.body.how] ? req.body.how : 'button' }); // only the auto-download omits this
+        const body = req.body || {};
+        const file = typeof body.file === 'string' && body.file.length < 300 ? body.file : null; // the file the person chose when a release has several that could each be the mod; checked against the release's own list
+        const row = await engine.downloadPlugin(req.params.id, { userAsked: true, how: require('./lib/download-log').HOWS[body.how] ? body.how : 'button', assetName: file, remember: body.remember === true }); // only the auto-download omits this
         if (!row) return res.status(404).json({ error: 'Unknown mod id.' });
         res.json(row);
+    });
+
+    // "Get" on a release's extra file: only that file, only when the person presses it. Body: { name } (must be one the row lists).
+    app.post('/api/plugins/:id/get-extra', async (req, res) => {
+        const name = req.body && typeof req.body.name === 'string' ? req.body.name : '';
+        const r = await engine.getExtra(req.params.id, name);
+        if (r.reason === 'unknown') return res.status(404).json({ error: 'Unknown mod id.' });
+        res.json({ ok: r.ok, reason: r.reason || null, row: r.row || null });
+    });
+
+    // "Change file choice": forgets the saved file choice for this mod.
+    app.post('/api/plugins/:id/forget-file-choice', (req, res) => {
+        const r = engine.forgetFileChoice(req.params.id);
+        if (!r.ok) return res.status(404).json({ error: 'Unknown mod id.' });
+        res.json(r);
     });
 
     // "Is this the same as <a mod you already have in Vortex>?": the person's Yes or No for a Hub listing under Mods not installed. Saved, then a

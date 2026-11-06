@@ -381,6 +381,22 @@ button.su-muted { background:none; color:var(--muted) }
 .desc ul.gap { margin-top:8px }
 .desc.clamp { max-height:calc(2 * 1.4 * 0.82rem); overflow:hidden } /* exactly two lines: a heading counts as one, a bullet counts per wrapped line */
 .desc.clamp * { margin-top:0 !important; margin-bottom:0 !important }
+.desc.clamp .ch-heading { display:inline; margin-right:0.45em } /* headings run together on one line inside the two-line preview, so they never use up both lines (OStimNet: two headings hid its text) */
 @media (max-width:640px) { .row.has-cover { grid-template-columns:1fr } .row.has-cover > .thumb { grid-column:1 } .row.has-cover > :not(.thumb):nth-child(n+4) { grid-column:1 } }
 .ch-toggle[hidden] { display:none }
 .prog-note { color:var(--muted); font-size:0.78rem; margin-top:4px }
+
+/* A release with several files (queue: a-release-with-several-files-lets-you-choose-one-or-get-an-extra...): the list under the row, and the extra's quiet line. */
+.picker, .extra-line { grid-column:1 / -1; font-size:0.8rem }
+.row.has-cover .picker, .row.has-cover .extra-line { grid-column:2 / -1 }
+.picker { border-top:1px solid var(--line); margin-top:4px; padding-top:10px }
+.pick-opt { display:grid; grid-template-columns:22px 1fr auto; gap:8px; align-items:center; padding:6px 4px; border-radius:6px; cursor:pointer }
+.pick-opt:hover { background:color-mix(in srgb, var(--text) 4%, var(--panel)) }
+.pick-opt input { width:15px; height:15px; margin:0 }
+.pick-opt .fn { font-family:monospace; font-size:0.84rem; word-break:break-all }
+.pick-opt .sz, .extra-line .sz { color:var(--muted); font-size:0.78rem; white-space:nowrap }
+.pick-remember { display:flex; align-items:center; gap:8px; margin-top:8px; padding:0 4px; color:var(--muted); cursor:pointer }
+.pick-remember input { width:15px; height:15px; margin:0 }
+.extra-line { display:flex; align-items:center; gap:10px; flex-wrap:wrap; color:var(--muted) }
+.extra-line .fn { font-family:monospace; font-size:0.82rem; color:var(--text); word-break:break-all }
+.extra-line button { padding:2px 12px; font-size:0.8rem }

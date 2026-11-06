@@ -163,6 +163,36 @@ let batchRunning = false;
 // rows of an Update all still waiting their turn.
 let liveProgress = {};
 let batchWaiting = new Set();
+// A release with several files that could each be the mod (row.releaseChoice): which rows have the list open, which file is chosen, which have "Remember my choice" ticked.
+// Nothing is chosen or ticked until the person does it. Kept here (not in the row) because the rows are drawn again on every poll.
+const pickOpen = new Set(), pickChosen = new Map(), pickRemember = new Set(), gettingExtra = new Set();
+function fileSizeText(bytes) {
+    const n = Number(bytes) || 0;
+    if (n < 1024) return `${n} ${n === 1 ? 'byte' : 'bytes'}`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+// "Choose file" and the list under the row. -> { action, below }
+function pickRowParts(row) {
+    const id = escapeHtml(row.id);
+    const open = pickOpen.has(row.id);
+    const chosen = pickChosen.get(row.id);
+    const files = row.releaseChoice.files || [];
+    const waiting = batchRunning ? '<div class="muted" style="font-size:0.75rem;text-align:right">Waiting for you</div>' : '';
+    const howMany = `<div class="muted" style="font-size:0.75rem;text-align:right">${row.releaseChoice.count || files.length} files available</div>`;   // under the button, where the eye already is
+    if (!open) return { action: `<button data-action="choose-file" data-id="${id}"${batchRunning ? ' disabled' : ''}>Choose file</button>${howMany}${waiting}`, below: '' };
+    const opts = files.map((f) => `<label class="pick-opt"><input type="radio" name="pick-${id}" value="${escapeHtml(f.name)}" data-pick-file="${id}"${chosen === f.name ? ' checked' : ''}><span class="fn">${escapeHtml(f.name)}</span><span class="sz">${escapeHtml(fileSizeText(f.size))}</span></label>`).join('');
+    return {
+        action: `<button class="primary" data-action="update-chosen" data-id="${id}"${chosen && !batchRunning ? '' : ' disabled'}>Update</button>${howMany}${waiting}`,
+        below: `<div class="picker">${opts}<label class="pick-remember"><input type="checkbox" data-pick-remember="${id}"${pickRemember.has(row.id) ? ' checked' : ''}><span>Remember my choice</span></label></div>`,
+    };
+}
+// The quiet line for a release's extra file(s).
+function extrasHtml(row) {
+    if (!Array.isArray(row.releaseExtras) || row.releaseExtras.length === 0) return '';
+    if (row.status === 'updated' || row.status === 'deployed' || row.isProgram) return '';
+    return row.releaseExtras.map((e) => `<div class="extra-line"><span>Also available:</span><span class="fn">${escapeHtml(e.name)}</span><span class="sz">${escapeHtml(fileSizeText(e.size))}</span><button data-action="get-extra" data-id="${escapeHtml(row.id)}" data-name="${escapeHtml(e.name)}"${gettingExtra.has(row.id + '|' + e.name) || batchRunning ? ' disabled' : ''}>Get</button></div>`).join('');
+}
 // Update all runs in two passes: every mod is installed first (its old copy stays), then "Removing old mods" removes them together and carries the rules.
 // batchDeferred = the mods installed so far whose old copy waits (their rows keep saying Updating...); removingOldMods = the second pass is running.
 let batchDeferred = new Set();
@@ -279,8 +309,14 @@ function formatReleaseDate(iso) {
 
 // The rows an "Update all" covers: downloaded, with a working update preview. A FOMOD mod is included: the batch pauses on
 // it and shows its options screen (it never installs without one).
+// A pick-one row (a release with several files that could each be the mod) counts too once the person has a file chosen right now: Update all downloads that exact file and
+// updates it, as the row's own Update would. The choice lives on this page only (pickChosen); with none chosen the row still waits for the person.
+function hasChosenFile(r) {
+    const chosen = pickChosen.get(r.id);
+    return !!(chosen && r.status === 'needs_you' && r.releaseChoice && !r.isProgram && (r.releaseChoice.files || []).some((f) => f.name === chosen));
+}
 function updatableRows(rows) {
-    return (rows || []).filter((r) => r.status === 'downloaded' && r.updatePreview && !r.oldCopyLeft);
+    return (rows || []).filter((r) => (r.status === 'downloaded' && r.updatePreview && !r.oldCopyLeft) || hasChosenFile(r));
 }
 
 function renderRow(row) {
@@ -297,7 +333,11 @@ function renderRow(row) {
     // HAS tracked this plugin, but its own version genuinely isn't known right now -- shown as a
     // real "?" on the left, never silently replaced by the latest version alone (which would read
     // like it's already up to date).
-    const verHtml = row.installedVersionUnknown && row.vortexWaiting
+    // Once an update is done the row shows only the version it is on now, not old -> new (director, 2026-11-04).
+    const verDone = (row.status === 'updated' || row.status === 'deployed') && row.latestVersion;
+    const verHtml = verDone
+        ? escapeHtml(row.latestVersion)
+        : row.installedVersionUnknown && row.vortexWaiting
         ? (row.latestVersion ? `&hellip;<span class="arrow">&rarr;</span><span class="new">${escapeHtml(row.latestVersion)}</span>` : '&hellip;')
         : row.installedVersionUnknown
         ? (row.latestVersion ? `?<span class="arrow">&rarr;</span><span class="new">${escapeHtml(row.latestVersion)}</span>` : '?')
@@ -367,6 +407,10 @@ function renderRow(row) {
             : `<button class="primary" data-action="download" data-id="${escapeHtml(row.id)}">Download</button>`;
         if (row.vortexWaiting) action += `<div class="muted" style="font-size:0.75rem;text-align:right">Waiting for Vortex…</div>`;
         else if (row.notInVortex) action += notInVortexNote(row);
+    } else if (row.status === 'needs_you' && row.releaseChoice && !row.isProgram) {
+        const parts = pickRowParts(row);
+        action = updateWorkHtml(row) || parts.action;
+        changesHtml += parts.below;
     } else if (row.status === 'needs_you' && row.linkOutOfDate) {
         // No button at all: this tool can't install the version the Hub lists. The release-page icon above is the way to it.
         const words = linkOutOfDateWords(row);
@@ -402,6 +446,8 @@ function renderRow(row) {
         if (row.status === 'update_available' || row.status === 'needs_you') action = programButton(row);
         changesHtml += programNote(row);
     }
+    if (row.hasSavedChoice && !row.releaseChoice && !row.isProgram && row.status !== 'updated' && row.status !== 'deployed' && !updateWorkHtml(row)) action += `<a href="#" class="ch-toggle" data-action="forget-file-choice" data-id="${escapeHtml(row.id)}">Change file</a>`;
+    changesHtml += extrasHtml(row);
     const right = `<div class="right">${rowIconsHtml(row)}${action}</div>`;
 
     // A row never shows "Updating..." and a failure sentence together: the old line goes the moment a try starts, and a new one appears only if it ends badly.
@@ -411,7 +457,7 @@ function renderRow(row) {
     // "What's new" stays visible once downloaded too, not just while still pending (director,
     // 2026-09-30: "the release notes he saw earlier are gone") -- it's still the same real
     // changelog either way, and losing it the moment a download finishes is never useful.
-    if ((row.status === 'update_available' || row.status === 'queued' || row.status === 'downloading' || row.status === 'downloaded') && row.changelog) {
+    if ((row.status === 'update_available' || row.status === 'queued' || row.status === 'downloading' || row.status === 'downloaded' || row.status === 'needs_you') && row.changelog) {
         const rendered = renderMarkdownSafe(row.changelog);
         const isLong = row.changelog.length > 220 || (row.changelog.match(/\r?\n/g) || []).length > 2;
         const collapseId = `changes-${row.id}`.replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -1026,7 +1072,7 @@ function renderPlugins(state) {
     if (!sortLoaded) { sortLoaded = true; modSort = state.modListSort === 'az' || state.modListSort === 'za' ? state.modListSort : 'list'; }
     const sortRows = (list, group) => (modSort === 'list' ? rowState.sortGroup(list, group) : rowState.sortByName(list, modSort));
     const updates = sortRows(rows.filter(window.setupFlow.isWaitingUpdate), 'updates');
-    const needsYou = sortRows(rows.filter((r) => r.status === 'needs_you'), 'needsYou');
+    const needsYou = sortRows(rows.filter((r) => r.status === 'needs_you' && !r.releaseChoice), 'needsYou');
     const upToDate = sortRows(rows.filter((r) => r.status === 'up_to_date' || r.status === 'unknown_version' || r.status === 'updated' || r.status === 'deployed'), 'upToDate');
     const notOnHub = sortRows(rows.filter((r) => r.status === 'not_on_hub'), 'notOnHub');
     const niSorted = modSort === 'list' ? niRows : rowState.sortByName(niRows, modSort);
@@ -1187,6 +1233,20 @@ document.addEventListener('click', async (e) => {
         dropLeftover();
         await api('POST', `/api/plugins/${encodeURIComponent(el.dataset.id)}/download`);
         refreshState();
+    } else if (action === 'choose-file') {
+        e.preventDefault();
+        pickOpen.add(el.dataset.id);
+        if (lastRenderedState) renderPlugins(lastRenderedState);
+    } else if (action === 'update-chosen') {
+        e.preventDefault();
+        await updateChosenClick(el.dataset.id);
+    } else if (action === 'get-extra') {
+        e.preventDefault();
+        await getExtraClick(el.dataset.id, el.dataset.name);
+    } else if (action === 'forget-file-choice') {
+        e.preventDefault();
+        try { await api('POST', `/api/plugins/${encodeURIComponent(el.dataset.id)}/forget-file-choice`); } catch { /* the row stays as it was */ }
+        refreshState();
     } else if (action === 'open-link') {
         e.preventDefault();
         sendVisit(el.dataset.visitId); // the count goes out in the background; the page opens right now, from this click
@@ -1330,7 +1390,7 @@ function updateWorkHtml(row) {
     if (prog && prog.waiting) return word + line('Waiting for Vortex…');
     if (prog || row.id === updatingId || workingIds.has(row.id)) return word + line(prog && STEP_NOTES[prog.step] || '');
     if (batchDeferred.has(row.id)) { // installed, its old copy waits for the second pass: the same word until the whole mod is done
-        return removingOldMods ? word + line('Removing the old version…', ' data-removing-old-mods-row') : word + line('Queued to remove the old version…');
+        return removingOldMods ? statHtml('info', 'Removing…', ' data-removing-old-mods-row') + line('') : statHtml('info', 'Pending removal', ' data-update-step') + line('');
     }
     if (batchWaiting.has(row.id)) return statHtml('off', 'Waiting…');
     return '';
@@ -1465,6 +1525,13 @@ async function runUpdateBatch(ids, { onStep } = {}) {
             let reply;
             let skippedThisOne = false;
             try {
+                // A pick-one row with a file chosen: that exact file is downloaded first (Remember honoured); if it cannot be updated the row is left for the person.
+                const pre = ((lastRenderedState && lastRenderedState.rows) || []).find((r) => r.id === id);
+                if (pre && hasChosenFile(pre)) {
+                    const ready = await downloadChosenFile(id, { needPreview: false });
+                    try { renderPlugins(await api('GET', '/api/state')); } catch { /* the next refresh covers it */ }
+                    if (!ready) { summary.skipped.push(id); continue; }
+                }
                 // A FOMOD mod pauses the batch on its options screen; confirming installs it, Skip leaves it for later.
                 const rowNow = ((lastRenderedState && lastRenderedState.rows) || []).find((r) => r.id === id);
                 let needsScreen = !!(rowNow && rowNow.isFomod);
@@ -1638,6 +1705,49 @@ async function runSingleUpdate(id) {
         if (reply.result.wasEnabled !== false) await askDeploy({ ids: [id], titles: [(reply.row && reply.row.title) || id], allOk: true });
     }
 }
+
+// The pick-one row's Update: downloads the file the person chose (and remembers the choice when ticked), then goes the way every Update goes.
+// Downloads the file chosen on a pick-one row (saving the choice when Remember is ticked) and forgets the page's pick once it is in. -> true when the row is downloaded and can be updated.
+// `needPreview`: also wait for the row's "can Update" (the single Update opens its confirm card from it); the batch does not need it, the update itself says if it cannot go.
+async function downloadChosenFile(id, { needPreview = true } = {}) {
+    const file = pickChosen.get(id);
+    if (!file) return false;
+    const row = await api('POST', `/api/plugins/${encodeURIComponent(id)}/download`, { file, remember: pickRemember.has(id) });
+    if (row && row.status === 'downloaded') { pickOpen.delete(id); pickChosen.delete(id); pickRemember.delete(id); }
+    if (!(row && row.status === 'downloaded')) return false;
+    if (row.updatePreview || !needPreview) return true;
+    for (let i = 0; i < 2; i++) { // the state call works out "can Update" for a downloaded row against Vortex (it may need a moment)
+        const st = await api('GET', '/api/state');
+        const r = ((st && st.rows) || []).find((x) => x.id === id);
+        if (r && r.updatePreview) return true;
+    }
+    return false;
+}
+async function updateChosenClick(id) {
+    if (!pickChosen.get(id)) return;
+    dropLeftover();
+    markWorking([id]);
+    let ready = false;
+    try { ready = await downloadChosenFile(id); } finally { workingDone([id], { render: false }); }
+    await refreshState();
+    if (ready) await startUpdate(id);
+}
+// "Get" on a release's extra file: only that file, installed as its own mod.
+async function getExtraClick(id, name) {
+    const key = id + '|' + name;
+    gettingExtra.add(key);
+    if (lastRenderedState) renderPlugins(lastRenderedState);
+    try { await api('POST', `/api/plugins/${encodeURIComponent(id)}/get-extra`, { name }); } catch { /* the row shows its own error */ }
+    gettingExtra.delete(key);
+    await refreshState();
+}
+// The radio buttons and the tick box change only the page's own memory (and which buttons are lit).
+document.addEventListener('change', (e) => {
+    const t = e.target;
+    if (!t || !t.dataset) return;
+    if (t.dataset.pickFile) { pickChosen.set(t.dataset.pickFile, t.value); if (lastRenderedState) renderPlugins(lastRenderedState); }
+    else if (t.dataset.pickRemember) { if (t.checked) pickRemember.add(t.dataset.pickRemember); else pickRemember.delete(t.dataset.pickRemember); }
+});
 
 // Install on one Mods-not-installed row: download the latest release, then the same install an update does (a FOMOD still shows its
 // options screen first, the deploy question follows). The row says Downloading... from the first moment.
