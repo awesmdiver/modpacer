@@ -243,6 +243,26 @@ function buildApp() {
         res.json(engine.getState());
     });
 
+    // "I have this" / "I updated it" / "I don't have this" on a program row: saved in ModPacer's own list, answered with the new state (no check, no Vortex).
+    app.post('/api/plugins/:id/program-have', (req, res) => {
+        const b = req.body || {};
+        const r = engine.setProgramHave(req.params.id, { latest: b.latest === true, version: typeof b.version === 'string' ? b.version : '' });
+        if (!r.ok) return res.status(r.status).json({ error: r.error });
+        res.json(engine.getState());
+    });
+    app.post('/api/plugins/:id/program-not-have', (req, res) => {
+        const r = engine.clearProgramHave(req.params.id);
+        if (!r.ok) return res.status(r.status).json({ error: r.error });
+        res.json(engine.getState());
+    });
+
+    // "These New mods were drawn on the page" (queue: a-new-section-above-updates-shows-mods-just-added-to-the-hub). Behind the local guard like every route;
+    // only ids that are New right now are kept, anything else is ignored. They move to Mods not installed at the next check or start.
+    app.post('/api/hub-shown', (req, res) => {
+        const ids = Array.isArray(req.body && req.body.ids) ? req.body.ids.filter((i) => typeof i === 'string').slice(0, 500) : [];
+        res.json(engine.noteHubShown(ids));
+    });
+
     // A click through to a mod's own page (the Mod page arrow, Open on Nexus): counted on the plugins page, in the background. The page has
     // already opened the link; this never delays or blocks anything.
     // "This mod is currently disabled. Do you want to enable it or keep it disabled?": which of these mods are off in Vortex right now, and the answer.

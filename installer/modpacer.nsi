@@ -382,6 +382,8 @@ Section "Uninstall"
             Delete "$INSTDIR\install-info.json"
             Delete "$INSTDIR\match-records.json"
             Delete "$INSTDIR\file-choices.json"
+            Delete "$INSTDIR\hub-seen.json"
+            Delete "$INSTDIR\programs-have.json"
             Delete "$INSTDIR\tray-notice-shown" ; the tray program's "first start" flag (launcher: NoticeFlagName)
             RMDir /r "$INSTDIR\cache"
             RMDir /r "$INSTDIR\logs"

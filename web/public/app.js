@@ -15,6 +15,7 @@ function modpacerFetch(url, opts) {
 async function api(method, url, body) {
     // While an update runs the page's state reads are "quiet": the server answers from what it holds and sends Vortex nothing (no preview or deploy-needed reads between two mods).
     if (url === '/api/state' && (batchRunning || singleUpdating)) url = '/api/state?quiet=1';
+    if (url.startsWith('/api/state')) lastStateQuiet = url.includes('quiet=1');
     const res = await modpacerFetch(url, {
         method, headers: body ? { 'Content-Type': 'application/json' } : undefined,
         body: body ? JSON.stringify(body) : undefined,
@@ -341,7 +342,7 @@ function renderRow(row) {
         ? (row.latestVersion ? `&hellip;<span class="arrow">&rarr;</span><span class="new">${escapeHtml(row.latestVersion)}</span>` : '&hellip;')
         : row.installedVersionUnknown
         ? (row.latestVersion ? `?<span class="arrow">&rarr;</span><span class="new">${escapeHtml(row.latestVersion)}</span>` : '?')
-        : row.latestVersion && row.installedVersion && row.latestVersion !== row.installedVersion
+        : row.latestVersion && row.installedVersion && row.latestVersion !== row.installedVersion && row.status !== 'up_to_date' && row.status !== 'unknown_version'   // an up-to-date row never shows an arrow: a mod newer than the Hub's (0.11.1 against the Hub's 0.11.0) is not a downgrade
             ? `${escapeHtml(row.installedVersion)}<span class="arrow">&rarr;</span><span class="new">${escapeHtml(row.latestVersion)}</span>`
             : escapeHtml(row.installedVersion || row.latestVersion || '?');
     const dateText = formatReleaseDate(row.releaseDate);
@@ -443,8 +444,9 @@ function renderRow(row) {
         action = statHtml('off', 'Not on the Hub');
     }
     if (row.isProgram) { // never Download, Update or Install: only the download page (the status and versions above stay true)
-        if (row.status === 'update_available' || row.status === 'needs_you') action = programButton(row);
-        changesHtml += programNote(row);
+        if (row.status === 'update_available' || row.status === 'needs_you') action = programButton(row) + (row.iHaveThis ? `<button class="btn-muted" data-action="have-updated" data-id="${escapeHtml(row.id)}">I updated it</button>${haveUndoLink(row)}` : '');
+        else if (row.iHaveThis) action += haveUndoLink(row);
+        changesHtml += row.haveLine ? `<div class="prog-note">${escapeHtml(row.haveLine)}</div>` : programNote(row);
     }
     if (row.hasSavedChoice && !row.releaseChoice && !row.isProgram && row.status !== 'updated' && row.status !== 'deployed' && !updateWorkHtml(row)) action += `<a href="#" class="ch-toggle" data-action="forget-file-choice" data-id="${escapeHtml(row.id)}">Change file</a>`;
     changesHtml += extrasHtml(row);
@@ -649,14 +651,14 @@ function groupHeader(label, groupRows, key) {
 // or closes it. Exactly ONE section is open when the page starts, chosen from the counts (Updates, else Up to date, else Mods not
 // installed) and re-chosen on every state until the check is complete; nothing is remembered between visits (a remembered choice is what used to leave two open). After that, only the person's own clicks
 // change what is open: a refresh never does.
-const SECTION_DEFAULTS = { updates: false, uptodate: false, notinstalled: false }; // the keys; the open one is picked by chooseStartupSection
+const SECTION_DEFAULTS = { new: false, updates: false, uptodate: false, notinstalled: false }; // the keys; the open one is picked by chooseStartupSection
 let sectionState = { ...SECTION_DEFAULTS };
 let sectionsDecided = false; // true once the start-up choice is final (the check is complete), or the person opened/closed something themselves
 // The rows arrive in stages (the update row can come after the others), so until the check is complete the choice is made again on every state: the open section
 // follows the first non-empty one. `final` = the check is complete; the person's own click stops it at once (setSectionOpen).
-function chooseStartupSection(updatesCount, upToDateCount, notInstalledCount, final) {
+function chooseStartupSection(updatesCount, upToDateCount, notInstalledCount, final, newCount = 0) {
     if (sectionsDecided) return;
-    const open = updatesCount > 0 ? 'updates' : upToDateCount > 0 ? 'uptodate' : notInstalledCount > 0 ? 'notinstalled' : null;
+    const open = newCount > 0 ? 'new' : updatesCount > 0 ? 'updates' : upToDateCount > 0 ? 'uptodate' : notInstalledCount > 0 ? 'notinstalled' : null;
     if (open) sectionState = { ...SECTION_DEFAULTS, [open]: true };
     if (final && open) sectionsDecided = true;
 }
@@ -827,6 +829,22 @@ function programButton(row) {
     const url = /^https:\/\//i.test(webUrl(row.externalUrl)) ? webUrl(row.externalUrl) : ''; // only an https address
     return url ? `<button data-action="open-link"${visitAttr(row)} data-url="${escapeHtml(url)}">Open download page</button>` : '';
 }
+// "I have this" (queue: programs-like-multiproxy-can-be-marked-i-have-this-so-modpacer-watches-them-for-updates): a program is not in Vortex, so the person says
+// they have it and which version; ModPacer then watches it for updates. The question sits inside the row; nothing is saved until Save or The latest.
+const haveAsking = new Map(); // program id -> what has been typed so far
+function haveUndoLink(row) { return `<a href="#" class="ch-toggle" data-action="have-undo" data-id="${escapeHtml(row.id)}">I don't have this</a>`; }
+function haveQuestion(row) {
+    if (!row.isProgram || !haveAsking.has(row.id)) return '';
+    const id = escapeHtml(row.id);
+    const latest = row.latestVersion ? `<button class="primary" data-action="have-latest" data-id="${id}">The latest (${escapeHtml(row.latestVersion)})</button>` : '';
+    return `<div class="ni-same"><span class="ni-same-q">Which version do you have?</span><span class="ni-same-btns">${latest}<input type="text" class="have-input" data-id="${id}" value="${escapeHtml(haveAsking.get(row.id))}" size="10" maxlength="40" spellcheck="false" aria-label="Version"><button class="btn-muted" data-action="have-save" data-id="${id}">Save</button><button class="btn-muted" data-action="have-cancel" data-id="${id}">Cancel</button></span></div>`;
+}
+async function programHaveCall(id, what, body) {
+    let state = null;
+    try { state = await api('POST', `/api/plugins/${encodeURIComponent(id)}/${what}`, body || {}); } catch { state = null; }
+    if (!state) { try { state = await api('GET', '/api/state'); } catch { state = null; } }
+    if (state) renderPlugins(state);
+}
 function programNote(row) { return row.programLine ? `<div class="prog-note">${escapeHtml(row.programLine)}</div>` : ''; }
 function installableRows(rows) {
     return (rows || []).filter((r) => r.notInstalled && r.status === 'update_available' && hasDownload(r) && !r.sameAs && !r.notRegisteredYet); // a mod ModPacer is asking about is never part of a bulk install
@@ -872,7 +890,7 @@ function requiresLine(row) {
     return `<div class="req-warn">&#9888;&#65039; Requires ${list}. Install ${names.length === 1 ? 'it' : 'them'} before this mod.</div>`;
 }
 function notInstalledAction(row) {
-    if (row.isProgram) return programButton(row);
+    if (row.isProgram) return programButton(row) + `<button class="btn-muted" data-action="have-open" data-id="${escapeHtml(row.id)}">I have this</button>`;
     if (row.notRegisteredYet) return ''; // its files are already there; nothing to download, the line under the name says what to do
     const mo2 = currentManager === 'mo2';
     const idAttr = `data-id="${escapeHtml(row.id)}"`;
@@ -907,15 +925,38 @@ function renderNotInstalledRow(row) {
     const reg = row.notRegisteredYet ? `<div class="req-warn">&#9888;&#65039; ${escapeHtml(row.notRegisteredYet)}</div>` : '';
     const desc = modCovers.descSlot(row);
     const prog = programNote(row);
-    const more = (tag || desc || req || same || reg || prog) ? `<div class="ni-more">${tag}${desc}${prog}${reg}${req}${same}</div>` : '';
+    const have = haveQuestion(row);
+    const more = (tag || desc || req || same || reg || prog || have) ? `<div class="ni-more">${tag}${desc}${prog}${reg}${req}${same}${have}</div>` : '';
+    const action = notInstalledAction(row);
+    const newDate = row.isNew ? formatReleaseDate(row.firstPublished) : ''; // a New mod shows the day it was first published on the Hub
+    const newStatus = row.isNew && !/class="st"/.test(action) ? statHtml('info', 'New') : ''; // the status word, unless the row is already showing its own (Downloading...)
     return `<div class="row${modCovers.rowClass()}" data-row-id="${escapeHtml(row.id)}">
         <div><div class="name">${escapeHtml(row.title)}${nsfwPill(row)}</div><div class="meta">${metaBits.join(' &middot; ') || '&nbsp;'}</div>${countsLine(row)}</div>
-        <div><div class="ver">${escapeHtml(row.latestVersion || '?')}</div></div>
-        <div class="right">${rowIconsHtml(row)}${notInstalledAction(row)}<button class="su-link" data-action="exclude-mod" data-id="${escapeHtml(row.id)}">Exclude</button></div>
+        <div><div class="ver">${escapeHtml(row.latestVersion || '?')}</div>${newDate ? `<div class="dt">${escapeHtml(newDate)}</div>` : ''}</div>
+        <div class="right">${rowIconsHtml(row)}${newStatus}${action}<button class="su-link" data-action="exclude-mod" data-id="${escapeHtml(row.id)}">Exclude</button></div>
         ${more}${err}
         ${modCovers.thumbHtml(row)}
     </div>`;
 }
+// "New" (queue: a-new-section-above-updates-shows-mods-just-added-to-the-hub): Hub mods added since ModPacer last counted them. Same rows as Mods not installed;
+// nothing at all (no empty section, no message) when there are none. Newest first, as the server ordered them.
+function newSectionHtml(newRows, totalCount) {
+    if (newRows.length === 0) return '';
+    return sectionHtml('new', 'New', searchTerms.length > 0 ? `${newRows.length} of ${totalCount}` : String(newRows.length), newRows, '', newRows.map(renderNotInstalledRow).join(''));
+}
+// Tells the server once which New mods the page drew, so the next check or start moves them to Mods not installed. Only a visible page counts, and never
+// the quiet reads made while an update runs; an id is reported once (a failed report is tried again on the next paint).
+const reportedNew = new Set();
+let lastStateQuiet = false;
+function reportNewShown(ids) {
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+    if (lastStateQuiet) return;
+    const fresh = ids.filter((id) => !reportedNew.has(id));
+    if (fresh.length === 0) return;
+    fresh.forEach((id) => reportedNew.add(id));
+    api('POST', '/api/hub-shown', { ids: fresh }).catch(() => { fresh.forEach((id) => reportedNew.delete(id)); });
+}
+document.addEventListener('visibilitychange', () => { if (lastRenderedState && document.visibilityState !== 'hidden') renderPlugins(lastRenderedState); });
 function notInstalledSectionHtml(state, niRows, totalCount) {
     const searching = searchTerms.length > 0;
     if (searching && niRows.length === 0) return ''; // a section with no match is not shown
@@ -1011,6 +1052,7 @@ function setSearch(text) {
     $('modSearch').value = text;
     applySearch();
 }
+document.addEventListener('input', (e) => { const el = e.target; if (el && el.classList && el.classList.contains('have-input')) haveAsking.set(el.dataset.id, el.value); });
 $('modSearch').addEventListener('input', () => {
     $('modSearchClear').hidden = $('modSearch').value === '';
     clearTimeout(searchTimer);
@@ -1060,12 +1102,13 @@ function renderPlugins(state) {
     modCovers.configure({ show: state.showModPictures, adult: state.showAdultNotInstalled });
     const allRows = state.rows || [];
     const rows = allRows.filter((r) => !r.notInstalled); // the mods found in the SkyrimNet install; the not-installed listings have their own section
-    const niRows = allRows.filter((r) => r.notInstalled);
+    const newRows = allRows.filter((r) => r.notInstalled && r.isNew); // already in the server's order: newest first
+    const niRows = allRows.filter((r) => r.notInstalled && !r.isNew);
     nexusKeySet = !!state.nexusKeySet;
     currentManager = state.modManager;
     currentPlatform = state.platform || 'win32';
     $('subtitle').textContent = state.lastCheckedAt
-        ? `Last checked ${new Date(state.lastCheckedAt).toLocaleTimeString()} · ${rows.length} ${plural(rows.length, 'mod', 'mods')} found in your SkyrimNet install`
+        ? `Last checked ${new Date(state.lastCheckedAt).toLocaleTimeString()} · ${rows.filter((r) => !r.iHaveThis).length} ${plural(rows.filter((r) => !r.iHaveThis).length, 'mod', 'mods')} found in your SkyrimNet install`
         : 'Not checked yet.';
 
     // The sort the player chose: the first state read sets it; after that only the player's own press changes it.
@@ -1083,8 +1126,9 @@ function renderPlugins(state) {
         ? `<div class="stat ${cls} go" data-action="goto-section" data-target="${target}" role="button" tabindex="0" title="${hint}"><div class="n">${n}</div><div class="l">${label}</div></div>`
         : `<div class="stat ${cls}"><div class="n">${n}</div><div class="l">${label}</div></div>`;
     const upToDateCount = upToDate.filter((r) => !r.vortexWaiting && !r.versionUnconfirmed).length + notOnHub.length;
-    chooseStartupSection(updates.length, upToDate.length, niRows.length, startupCheckComplete(state, rows)); // the same counts the section headers show
+    chooseStartupSection(updates.length, upToDate.length, niRows.length, startupCheckComplete(state, rows), newRows.length); // the same counts the section headers show
     $('summary').innerHTML = [
+        newRows.length > 0 ? tile('new', 'new', 'Show the mods that are new on the Hub', newRows.length, 'New') : '',
         tile('upd', updates.length > 0 ? 'updates' : '', 'Show the mods that have updates', updates.length, `${plural(updates.length, 'Update', 'Updates')} ready`),
         tile('nx', needsYou.length > 0 ? 'nexus' : '', 'Show the mods you need to download from Nexus', needsYou.filter((r) => !r.linkOutOfDate).length, 'Download from Nexus'),
         tile('ok', upToDate.length > 0 ? 'uptodate' : (notOnHub.length > 0 ? 'nothub' : ''), 'Show the mods that are up to date', upToDateCount, 'Up to date'),
@@ -1108,9 +1152,9 @@ function renderPlugins(state) {
     // The search: each list shows only its matches (the tiles above and the engine keep the full counts).
     const terms = searching ? searchTerms : [];
     const shown = (list) => window.modSearch.filter(list, terms);
-    const fUpdates = shown(updates), fNeedsYou = shown(needsYou), fUpToDate = shown(upToDate), fNotOnHub = shown(notOnHub), fNi = shown(niSorted);
+    const fUpdates = shown(updates), fNeedsYou = shown(needsYou), fUpToDate = shown(upToDate), fNotOnHub = shown(notOnHub), fNi = shown(niSorted), fNew = shown(newRows);
     const ofText = (f, all) => (searching ? `${f.length} of ${all.length}` : String(all.length));
-    let html = '';
+    let html = newSectionHtml(fNew, newRows.length);
     if (fUpdates.length > 0) {
         let updateAllHtml = '';
         if (updateAllCount > 0 && !searching) {
@@ -1134,6 +1178,7 @@ function renderPlugins(state) {
     // The automatic repeat is running (Vortex was still filling things in): say so, so it never looks stuck.
     $('retryNote').style.display = state.vortexRetrying ? '' : 'none';
     $('pluginList').innerHTML = html;
+    if (fNew.length > 0) reportNewShown(fNew.map((r) => r.id));
     modCovers.afterPaint($('pluginList')); // fills the descriptions already known and starts watching what is on screen; nothing is asked for until a row is seen
 
     // Also keep looking while a row is waiting on a Vortex that is still starting, so it flips to Update by itself.
@@ -1164,6 +1209,9 @@ $('checkNowBtn').addEventListener('click', async () => {
     $('checkNowBtn').disabled = true;
     vortexLostNotice = false;
     dropLeftover();
+    // A fresh check picks the open section again, like the start-up one: updates first, up to date closed (the person's own folding from before does not carry over).
+    sectionsDecided = false;
+    sectionState = { ...SECTION_DEFAULTS };
     // Vortex chosen, Helper installed, Vortex closed: ask to start it first (re-armed by this click).
     // Cancel just carries on with the normal check, exactly as when Vortex isn't open.
     await startVortexFlow.prompt({ rearm: true, blocked: modManagerPopupOpen() });
@@ -1290,6 +1338,23 @@ document.addEventListener('click', async (e) => {
     } else if (action === 'same-yes' || action === 'same-no') {
         e.preventDefault();
         await answerSameAs(el.dataset.id, action === 'same-yes' ? 'yes' : 'no');
+    } else if (action === 'have-open' || action === 'have-cancel') {
+        e.preventDefault();
+        if (action === 'have-open') haveAsking.set(el.dataset.id, ''); else haveAsking.delete(el.dataset.id);
+        if (lastRenderedState) renderPlugins(lastRenderedState);
+    } else if (action === 'have-latest' || action === 'have-updated') {
+        e.preventDefault();
+        haveAsking.delete(el.dataset.id);
+        await programHaveCall(el.dataset.id, 'program-have', { latest: true });
+    } else if (action === 'have-save') {
+        e.preventDefault();
+        const typed = String(haveAsking.get(el.dataset.id) || '').trim();
+        if (!typed) return; // an empty box saves nothing
+        haveAsking.delete(el.dataset.id);
+        await programHaveCall(el.dataset.id, 'program-have', { version: typed });
+    } else if (action === 'have-undo') {
+        e.preventDefault();
+        await programHaveCall(el.dataset.id, 'program-not-have');
     } else if (action === 'exclude-mod' || action === 'include-mod') {
         e.preventDefault();
         await excludeOrInclude(action === 'exclude-mod' ? 'exclude' : 'include', el.dataset.id);
@@ -1774,7 +1839,7 @@ function installSkipWhy(row) {
 async function openConfirmInstallAll() {
     if (batchRunning || installAllBusy) return;
     const state = await api('GET', '/api/state');
-    const ni = (state.rows || []).filter((r) => r.notInstalled && r.status === 'update_available' && !r.isProgram && !r.sameAs && !r.notRegisteredYet);
+    const ni = (state.rows || []).filter((r) => r.notInstalled && !r.isNew && r.status === 'update_available' && !r.isProgram && !r.sameAs && !r.notRegisteredYet);
     const mo2 = state.modManager === 'mo2';
     const eligible = ni.filter(hasDownload);
     if (eligible.length === 0) { renderPlugins(state); return; }
