@@ -82,6 +82,7 @@ button:disabled, button.primary:disabled { background:var(--panel); border-color
 .ch-body.ch-collapsed { max-height:4.2em; overflow:hidden; position:relative; mask-image:linear-gradient(to bottom, black 60%, transparent 100%) }
 .ch-toggle { display:inline-block; margin-top:4px; color:var(--accent-text); font-size:0.75rem; text-decoration:none }
 .st + .ch-toggle { margin-left:8px }
+.gh-current { color:var(--accent-text); font-size:0.82rem; text-decoration:underline }
 .bar { height:5px; background:var(--line); border-radius:3px; margin-top:6px; overflow:hidden; width:120px }
 .bar i { display:block; height:5px; background:var(--accent) }
 /* Working, but no real percentage to show: a short block sliding back and forth (still when motion is reduced). */

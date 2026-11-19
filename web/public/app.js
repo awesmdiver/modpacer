@@ -286,6 +286,13 @@ function hubIcon(row) {
     return `<a class="hub-ico" href="${escapeHtml(row.hubUrl)}" target="_blank" rel="noopener" title="${HUB_ICON_TEXT}" aria-label="${HUB_ICON_TEXT}" role="img">${HUB_SVG}</a>`;
 }
 // A row status: a small coloured dot and a word, no border (kind: ok = green, info = blue, warn = amber, off = grey).
+const LEFT_HUB_HOVER = "This mod is no longer in SkyrimNet's Plugin Hub list, so ModPacer cannot check it for updates. It is still installed.";
+// One link line under the status or button when GitHub's newest full release is newer than the Hub's and the installed one (row.githubCurrent, from the server). Nothing otherwise.
+function githubCurrentHtml(row) {
+    const g = row && row.githubCurrent;
+    if (!g || !g.version || !/^https:\/\/github\.com\//i.test(String(g.url || ''))) return '';
+    return `<a class="gh-current" href="${escapeHtml(g.url)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(`Open version ${g.version} on GitHub`)}" data-gh-current>${escapeHtml(`Current GitHub version: ${g.version}`)}</a>`;
+}
 function statHtml(kind, text, attrs = '') {
     return `<span class="st"${attrs}><span class="sdot ${kind}"></span>${text}</span>`;
 }
@@ -442,6 +449,9 @@ function renderRow(row) {
         action = row.status === 'unknown_version' ? statHtml('warn', "Can't check version") : statHtml('ok', 'Up to date');
     } else if (row.status === 'not_on_hub') {
         action = statHtml('off', 'Not on the Hub');
+    } else if (row.status === 'left_hub') {
+        // It was on the Hub and is not any more (two good reads in a row): a grey dot, no button; nothing about the mod itself is wrong.
+        action = statHtml('off', 'No longer on the Plugin Hub', ` title="${escapeHtml(LEFT_HUB_HOVER)}"`);
     }
     if (row.isProgram) { // never Download, Update or Install: only the download page (the status and versions above stay true)
         if (row.status === 'update_available' || row.status === 'needs_you') action = programButton(row) + (row.iHaveThis ? `<button class="btn-muted" data-action="have-updated" data-id="${escapeHtml(row.id)}">I updated it</button>${haveUndoLink(row)}` : '');
@@ -450,7 +460,7 @@ function renderRow(row) {
     }
     if (row.hasSavedChoice && !row.releaseChoice && !row.isProgram && row.status !== 'updated' && row.status !== 'deployed' && !updateWorkHtml(row)) action += `<a href="#" class="ch-toggle" data-action="forget-file-choice" data-id="${escapeHtml(row.id)}">Change file</a>`;
     changesHtml += extrasHtml(row);
-    const right = `<div class="right">${rowIconsHtml(row)}${action}</div>`;
+    const right = `<div class="right">${rowIconsHtml(row)}${action}${githubCurrentHtml(row)}</div>`;
 
     // A row never shows "Updating..." and a failure sentence together: the old line goes the moment a try starts, and a new one appears only if it ends badly.
     if (row.error && !updateWorkHtml(row)) {
@@ -651,7 +661,7 @@ function groupHeader(label, groupRows, key) {
 // or closes it. Exactly ONE section is open when the page starts, chosen from the counts (Updates, else Up to date, else Mods not
 // installed) and re-chosen on every state until the check is complete; nothing is remembered between visits (a remembered choice is what used to leave two open). After that, only the person's own clicks
 // change what is open: a refresh never does.
-const SECTION_DEFAULTS = { new: false, updates: false, uptodate: false, notinstalled: false }; // the keys; the open one is picked by chooseStartupSection
+const SECTION_DEFAULTS = { new: false, updates: false, uptodate: false, nothub: false, notinstalled: false }; // the keys; the open one is picked by chooseStartupSection
 let sectionState = { ...SECTION_DEFAULTS };
 let sectionsDecided = false; // true once the start-up choice is final (the check is complete), or the person opened/closed something themselves
 // The rows arrive in stages (the update row can come after the others), so until the check is complete the choice is made again on every state: the open section
@@ -933,7 +943,7 @@ function renderNotInstalledRow(row) {
     return `<div class="row${modCovers.rowClass()}" data-row-id="${escapeHtml(row.id)}">
         <div><div class="name">${escapeHtml(row.title)}${nsfwPill(row)}</div><div class="meta">${metaBits.join(' &middot; ') || '&nbsp;'}</div>${countsLine(row)}</div>
         <div><div class="ver">${escapeHtml(row.latestVersion || '?')}</div>${newDate ? `<div class="dt">${escapeHtml(newDate)}</div>` : ''}</div>
-        <div class="right">${rowIconsHtml(row)}${newStatus}${action}<button class="su-link" data-action="exclude-mod" data-id="${escapeHtml(row.id)}">Exclude</button></div>
+        <div class="right">${rowIconsHtml(row)}${newStatus}${action}${githubCurrentHtml(row)}<button class="su-link" data-action="exclude-mod" data-id="${escapeHtml(row.id)}">Exclude</button></div>
         ${more}${err}
         ${modCovers.thumbHtml(row)}
     </div>`;
@@ -1118,6 +1128,8 @@ function renderPlugins(state) {
     const needsYou = sortRows(rows.filter((r) => r.status === 'needs_you' && !r.releaseChoice), 'needsYou');
     const upToDate = sortRows(rows.filter((r) => r.status === 'up_to_date' || r.status === 'unknown_version' || r.status === 'updated' || r.status === 'deployed'), 'upToDate');
     const notOnHub = sortRows(rows.filter((r) => r.status === 'not_on_hub'), 'notOnHub');
+    const leftHub = sortRows(rows.filter((r) => r.status === 'left_hub'), 'notOnHub'); // had a Hub entry that is gone: drawn first inside Not on the Hub (one section, one count), counted in no tile and not in Up to date
+    const notOnHubAll = leftHub.concat(notOnHub); // the mods that left first, then the never-listed ones, each in its own order
     const niSorted = modSort === 'list' ? niRows : rowState.sortByName(niRows, modSort);
     paintSortRow(allRows.length > 0);
 
@@ -1131,7 +1143,7 @@ function renderPlugins(state) {
         newRows.length > 0 ? tile('new', 'new', 'Show the mods that are new on the Hub', newRows.length, 'New') : '',
         tile('upd', updates.length > 0 ? 'updates' : '', 'Show the mods that have updates', updates.length, `${plural(updates.length, 'Update', 'Updates')} ready`),
         tile('nx', needsYou.length > 0 ? 'nexus' : '', 'Show the mods you need to download from Nexus', needsYou.filter((r) => !r.linkOutOfDate).length, 'Download from Nexus'),
-        tile('ok', upToDate.length > 0 ? 'uptodate' : (notOnHub.length > 0 ? 'nothub' : ''), 'Show the mods that are up to date', upToDateCount, 'Up to date'),
+        tile('ok', upToDate.length > 0 ? 'uptodate' : (notOnHubAll.length > 0 ? 'nothub' : ''), 'Show the mods that are up to date', upToDateCount, 'Up to date'),
         state.notInstalledState === 'unreadable' ? '' : tile('ni', 'notinstalled', 'Show the mods that are not installed', niRows.length, 'Not installed'),
     ].join('');
 
@@ -1152,7 +1164,7 @@ function renderPlugins(state) {
     // The search: each list shows only its matches (the tiles above and the engine keep the full counts).
     const terms = searching ? searchTerms : [];
     const shown = (list) => window.modSearch.filter(list, terms);
-    const fUpdates = shown(updates), fNeedsYou = shown(needsYou), fUpToDate = shown(upToDate), fNotOnHub = shown(notOnHub), fNi = shown(niSorted), fNew = shown(newRows);
+    const fUpdates = shown(updates), fNeedsYou = shown(needsYou), fUpToDate = shown(upToDate), fNotOnHub = shown(notOnHubAll), fNi = shown(niSorted), fNew = shown(newRows);
     const ofText = (f, all) => (searching ? `${f.length} of ${all.length}` : String(all.length));
     let html = newSectionHtml(fNew, newRows.length);
     if (fUpdates.length > 0) {
@@ -1165,7 +1177,7 @@ function renderPlugins(state) {
     }
     if (fNeedsYou.length > 0) html += groupHeader('Download from Nexus', fNeedsYou, 'nexus') + fNeedsYou.map(renderRow).join('');
     if (fUpToDate.length > 0) html += sectionHtml('uptodate', 'Up to date', ofText(fUpToDate, upToDate), fUpToDate, '', fUpToDate.map(renderRow).join(''));
-    if (fNotOnHub.length > 0) html += groupHeader('Not on the Hub', fNotOnHub, 'nothub') + fNotOnHub.map(renderRow).join('');
+    if (fNotOnHub.length > 0) html += sectionHtml('nothub', 'Not on the Hub', ofText(fNotOnHub, notOnHubAll), fNotOnHub, '', fNotOnHub.map(renderRow).join('')); // closed until the person opens it; nothing drawn when there are none
     html += notInstalledSectionHtml(state, fNi, niSorted.length);
     if (searching && html === '') html = `<p class="muted">No mods found.</p>`;
     // Before the very first check, this card would otherwise just be an empty box (director, from
