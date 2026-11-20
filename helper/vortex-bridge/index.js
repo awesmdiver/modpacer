@@ -537,6 +537,28 @@ function getPluginLoadOrder(api, pluginName) {
     return { found: true, id, name: entry.name, enabled: entry.enabled, loadOrder: entry.loadOrder };
 }
 
+// The flags Vortex's Plugins page draws, read from Vortex's own plugin info
+// (state.session.plugins.pluginInfo[id], the IPluginCombined records the Plugins page pushes with
+// SET_PLUGIN_INFO; names follow getPluginFlags in gamebryo_plugin_management/views/PluginFlags.tsx).
+// Returns null when Vortex has not read the plugin yet: no record, or the Plugins page's placeholder
+// (its "nothing parsed yet" record has revision 999). Never an invented empty list.
+// "dummy" comes from LOOT's isEmpty, so it only shows once LOOT has loaded its info.
+function getPluginFlagNames(state, id) {
+    const info = state.session && state.session.plugins && state.session.plugins.pluginInfo;
+    const p = info && Object.prototype.hasOwnProperty.call(info, id) ? info[id] : null;
+    if (!p || p.revision === 999) return null;
+    const flags = [];
+    if (p.isMaster) flags.push('master');
+    if (p.isBlueprint) flags.push('blueprint');
+    if (p.isLight) flags.push('light');
+    if (p.isMedium) flags.push('medium');
+    if (p.isNative) flags.push('native');
+    if (p.loadsArchive) flags.push('loads-archive');
+    if (p.isEmpty) flags.push('dummy');
+    if (p.parseFailed) flags.push('parse-failed');
+    return flags;
+}
+
 // CONFIRMED live 2026-08-21 -- see GET /plugins/:pluginName's own header comment for why no
 // vortex-api-exported write path exists for a single plugin's own enabled flag. This is what makes
 // one anyway: Vortex's own real "Enable all" button (shown when a re-enabled mod "contains multiple
@@ -1668,8 +1690,10 @@ function startServer(api) {
         if (req.method === 'GET' && pluginMatch) {
             const pluginName = decodeURIComponent(pluginMatch[1]);
             const result = getPluginLoadOrder(api, pluginName);
+            // flags: names Vortex shows in its Flags column, or null when Vortex has not read the plugin.
+            const flags = getPluginFlagNames(api.store.getState(), result.id);
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ pluginName, ...result }));
+            res.end(JSON.stringify({ pluginName, ...result, flags }));
             return;
         }
 
@@ -2397,7 +2421,7 @@ function main(context) {
 // ever calls this module as a plain function, and never looks at any property on it, so attaching
 // these doesn't change how Vortex loads or runs the extension at all.
 main.__testables = {
-    getOneMod,
+    getOneMod, getPluginFlagNames,
     findModPacerInstallPath, findModPacerNodePath, shouldRunModPacerCheck, runModPacerCheck, triggerPluginModPacerCheck,
     modPacerSetUpState, MODPACER_NOT_SET_UP_MESSAGE, readModPacerCheckReason,
     notifyBodyFromCompatShape, sendBridgeNotification, getVortexPaths, MODPACER_INFO_PATH, getNeedToDeploy,

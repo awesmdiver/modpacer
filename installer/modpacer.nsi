@@ -373,6 +373,7 @@ Section "Uninstall"
         ${If} ${FileExists} "$INSTDIR\${MP_MARKER}"
             ; Only ModPacer's own settings, by name: never the whole folder, so anything else in it is left alone.
             Delete "$INSTDIR\config.json"
+            Delete "$INSTDIR\config.json.*.tmp" ; a settings save that was cut short leaves its temporary copy (it holds the same key)
             Delete "$INSTDIR\state.json"
             Delete "$INSTDIR\vortex-info-cache.json"
             Delete "$INSTDIR\check-last.txt"
@@ -385,6 +386,8 @@ Section "Uninstall"
             Delete "$INSTDIR\hub-seen.json"
             Delete "$INSTDIR\hub-absent.json"
             Delete "$INSTDIR\programs-have.json"
+            Delete "$INSTDIR\dummy-masters.json"
+            Delete "$INSTDIR\nexus-current.json"
             Delete "$INSTDIR\tray-notice-shown" ; the tray program's "first start" flag (launcher: NoticeFlagName)
             RMDir /r "$INSTDIR\cache"
             RMDir /r "$INSTDIR\logs"

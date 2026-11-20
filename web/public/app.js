@@ -290,8 +290,17 @@ const LEFT_HUB_HOVER = "This mod is no longer in SkyrimNet's Plugin Hub list, so
 // One link line under the status or button when GitHub's newest full release is newer than the Hub's and the installed one (row.githubCurrent, from the server). Nothing otherwise.
 function githubCurrentHtml(row) {
     const g = row && row.githubCurrent;
+    if (row && row.currentWinner === 'nexus') return ''; // both are ahead and Nexus is the higher one: its line is the one line
+    if (g && row.willInstallVersion === g.version) return ''; // the Update row already says this number (it installs it): never a second line for the same version
     if (!g || !g.version || !/^https:\/\/github\.com\//i.test(String(g.url || ''))) return '';
     return `<a class="gh-current" href="${escapeHtml(g.url)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(`Open version ${g.version} on GitHub`)}" data-gh-current>${escapeHtml(`Current GitHub version: ${g.version}`)}</a>`;
+}
+// The same one link line for Nexus (row.nexusCurrent, from the server, only with the person's saved key): "Current Nexus version: 1.9.3", opening the mod's Files tab. The link is
+// only ever drawn when it is the fixed Nexus address of a skyrimspecialedition mod; the version is escaped.
+function nexusCurrentHtml(row) {
+    const n = row && row.nexusCurrent;
+    if (!n || !n.version || row.currentWinner === 'github' || !/^https:\/\/www\.nexusmods\.com\/skyrimspecialedition\/mods\/\d+\?tab=files$/.test(String(n.url || ''))) return '';
+    return `<a class="gh-current" href="${escapeHtml(n.url)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(`Open version ${n.version} on Nexus`)}" data-nexus-current>${escapeHtml(`Current Nexus version: ${n.version}`)}</a>`;
 }
 function statHtml(kind, text, attrs = '') {
     return `<span class="st"${attrs}><span class="sdot ${kind}"></span>${text}</span>`;
@@ -301,9 +310,65 @@ function nsfwPill(row) {
     return row.nsfw ? '<span class="nsfw-pill" title="Adult content">NSFW</span>' : '';
 }
 function rowIconsHtml(row) {
-    const icons = [fomodIcon(row), releaseIcon(row), hubIcon(row), downloadedIcon(row)].filter(Boolean).join('');
+    const icons = [fomodIcon(row), releaseIcon(row), hubIcon(row), downloadedIcon(row), rowMoreButton(row)].filter(Boolean).join('');
     return icons ? `<div class="icons">${icons}</div>` : '';
 }
+
+// ---- The "..." menu on every row (2026-11-19): Skip this update (a row with an update) and Exclude this mod (every row). None on a row that is already excluded or skipped.
+// One menu at a time, opened by a click, closed by a click elsewhere or Escape; the arrow keys move between its items.
+// A small muted line under the title when the mod the person has is named differently from the Hub's name for it (row.installedAs, set only for a match made across spellings).
+function installedAsLine(row) {
+    return row && row.installedAs ? `<div class="muted">Installed as ${escapeHtml(row.installedAs)}</div>` : '';
+}
+function rowMoreButton(row) {
+    if (!row.inExcluded && (row.unverifiedExcluded || row.skipping || row.dummyMaster)) return ''; // a row in the Excluded section has its own menu (Include again)
+    return `<button type="button" class="row-more" data-action="row-menu" data-id="${escapeHtml(row.id)}" title="Mod options" aria-label="Mod options" aria-haspopup="menu" aria-expanded="false">&#8943;</button>`;
+}
+let rowMenuEl = null, rowMenuBtn = null;
+function closeRowMenu(refocus) {
+    if (rowMenuBtn) { rowMenuBtn.setAttribute('aria-expanded', 'false'); rowMenuBtn.classList.remove('open'); if (refocus) rowMenuBtn.focus(); }
+    if (rowMenuEl) rowMenuEl.remove();
+    rowMenuEl = null; rowMenuBtn = null;
+}
+function openRowMenu(btn) {
+    const same = rowMenuBtn === btn;
+    closeRowMenu(false);
+    if (same) return;
+    const inExcluded = !!(btn.closest && btn.closest('.sec[data-section="excluded"]'));
+    const row = inExcluded ? { id: btn.dataset.id } : ((lastRenderedState && lastRenderedState.rows) || []).find((r) => r.id === btn.dataset.id);
+    if (!row) return;
+    const version = row.willInstallVersion || row.latestVersion;
+    const canSkip = !row.notInstalled && version && ['update_available', 'needs_you', 'downloaded'].includes(row.status);
+    const item = (action, title, small) => `<button type="button" role="menuitem" class="row-menu-item" data-action="${action}" data-id="${escapeHtml(row.id)}">${title}${small ? `<small>${small}</small>` : ''}</button>`;
+    const menu = document.createElement('div');
+    menu.className = 'row-menu'; menu.setAttribute('role', 'menu');
+    menu.innerHTML = inExcluded ? item('menu-include', 'Include again', '') : ((canSkip ? item('menu-skip', 'Skip this update', `Pass on ${escapeHtml(version)}. We'll still check for future updates.`) : '') + item('menu-exclude', 'Exclude this mod', 'Never check or update it.'));
+    document.body.appendChild(menu);
+    const r = btn.getBoundingClientRect();
+    menu.style.top = `${Math.round(r.bottom + 4)}px`;
+    menu.style.left = `${Math.max(8, Math.round(r.right - menu.offsetWidth))}px`;
+    btn.setAttribute('aria-expanded', 'true'); btn.classList.add('open');
+    rowMenuEl = menu; rowMenuBtn = btn;
+    const items = [...menu.querySelectorAll('.row-menu-item')];
+    items[0].focus();
+    menu.addEventListener('keydown', (e) => {
+        const i = items.indexOf(document.activeElement);
+        if (e.key === 'ArrowDown') { e.preventDefault(); items[(i + 1) % items.length].focus(); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); items[(i - 1 + items.length) % items.length].focus(); }
+        else if (e.key === 'Escape') { e.preventDefault(); closeRowMenu(true); }
+        else if (e.key === 'Tab') closeRowMenu(false);
+    });
+}
+document.addEventListener('click', (e) => { if (rowMenuEl && !(e.target.closest && (e.target.closest('.row-menu') || e.target.closest('.row-more')))) closeRowMenu(false); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && rowMenuEl) closeRowMenu(true); });
+async function skipUpdateClick(id) {
+    let state = null;
+    try { state = await api('POST', `/api/plugins/${encodeURIComponent(id)}/skip-update`); } catch { state = null; }
+    if (!state) { try { state = await api('GET', '/api/state'); } catch { state = null; } }
+    if (state) renderPlugins(state);
+    try { await loadSettings(); } catch { /* the list is read again the next time Settings opens */ }
+}
+
 
 // "Sep 26, 2026" -- a release date already resolved server-side (GitHub's own published_at, or a
 // Nexus file's own upload date); never guessed here, an unparseable/missing value just renders no
@@ -342,15 +407,17 @@ function renderRow(row) {
     // real "?" on the left, never silently replaced by the latest version alone (which would read
     // like it's already up to date).
     // Once an update is done the row shows only the version it is on now, not old -> new (director, 2026-11-04).
-    const verDone = (row.status === 'updated' || row.status === 'deployed') && row.latestVersion;
+    // The version it will really install (GitHub ahead of the Hub, bare link) and the one that really went in (row.installedNowVersion) win over the Hub's text.
+    const toVer = row.willInstallVersion || row.latestVersion;
+    const verDone = (row.status === 'updated' || row.status === 'deployed') && (row.installedNowVersion || row.latestVersion);
     const verHtml = verDone
-        ? escapeHtml(row.latestVersion)
+        ? escapeHtml(row.installedNowVersion || row.latestVersion)
         : row.installedVersionUnknown && row.vortexWaiting
-        ? (row.latestVersion ? `&hellip;<span class="arrow">&rarr;</span><span class="new">${escapeHtml(row.latestVersion)}</span>` : '&hellip;')
+        ? (toVer ? `&hellip;<span class="arrow">&rarr;</span><span class="new">${escapeHtml(toVer)}</span>` : '&hellip;')
         : row.installedVersionUnknown
-        ? (row.latestVersion ? `?<span class="arrow">&rarr;</span><span class="new">${escapeHtml(row.latestVersion)}</span>` : '?')
+        ? (toVer ? `?<span class="arrow">&rarr;</span><span class="new">${escapeHtml(toVer)}</span>` : '?')
         : row.latestVersion && row.installedVersion && row.latestVersion !== row.installedVersion && row.status !== 'up_to_date' && row.status !== 'unknown_version'   // an up-to-date row never shows an arrow: a mod newer than the Hub's (0.11.1 against the Hub's 0.11.0) is not a downgrade
-            ? `${escapeHtml(row.installedVersion)}<span class="arrow">&rarr;</span><span class="new">${escapeHtml(row.latestVersion)}</span>`
+            ? `${escapeHtml(row.installedVersion)}<span class="arrow">&rarr;</span><span class="new">${escapeHtml(toVer)}</span>`
             : escapeHtml(row.installedVersion || row.latestVersion || '?');
     const dateText = formatReleaseDate(row.releaseDate);
     const dateHtml = dateText ? `<div class="dt">${escapeHtml(dateText)}</div>` : '';
@@ -372,7 +439,9 @@ function renderRow(row) {
     const inProgress = rowState.inProgressView(row);
     // A row whose update is running (or waiting its turn in Update all) shows that, never the plain Update button.
     const updateWork = row.status === 'downloaded' ? updateWorkHtml(row) : '';
-    if (inProgress) {
+    if (row.status === 'disabled') {
+        // Switched off in the mod manager (the "Ignore disabled mods" switch): nothing to do for it and nothing to say; the Disabled section already says it.
+    } else if (inProgress) {
         // queued -> "Waiting to download..." with no bar; downloading -> real bytes, and a bar only when
         // the real size is known (rules live in row-state.js).
         action = statHtml('info', escapeHtml(inProgress.label))
@@ -430,6 +499,10 @@ function renderRow(row) {
         } else {
             action = webUrl(row.externalUrl) ? `<button data-action="open-link"${visitAttr(row)} data-url="${escapeHtml(webUrl(row.externalUrl))}">${row.releaseAmbiguous ? 'Open download page' : 'View release'}</button>` : '';
         }
+    } else if (row.skipping) {
+        // "Skip this update": up to date for now, saying which version is being passed on, with the way back.
+        action = statHtml('off', `Skipping ${escapeHtml(row.skipping.version)}`);
+        changesHtml += `<div class="muted">Skipping ${escapeHtml(row.skipping.version)}. <a href="#" class="ch-toggle" data-action="stop-skipping" data-id="${escapeHtml(row.id)}">Stop skipping</a></div>`;
     } else if ((row.status === 'up_to_date' || row.status === 'unknown_version') && row.vortexWaiting) {
         // Vortex was still busy when this was checked: no "Up to date" until Vortex has really answered (checked again by itself).
         action = `<div class="muted" style="font-size:0.75rem;text-align:right">Waiting for Vortex…</div>`;
@@ -460,7 +533,7 @@ function renderRow(row) {
     }
     if (row.hasSavedChoice && !row.releaseChoice && !row.isProgram && row.status !== 'updated' && row.status !== 'deployed' && !updateWorkHtml(row)) action += `<a href="#" class="ch-toggle" data-action="forget-file-choice" data-id="${escapeHtml(row.id)}">Change file</a>`;
     changesHtml += extrasHtml(row);
-    const right = `<div class="right">${rowIconsHtml(row)}${action}${githubCurrentHtml(row)}</div>`;
+    const right = `<div class="right">${rowIconsHtml(row)}${action}${githubCurrentHtml(row)}${nexusCurrentHtml(row)}</div>`;
 
     // A row never shows "Updating..." and a failure sentence together: the old line goes the moment a try starts, and a new one appears only if it ends badly.
     if (row.error && !updateWorkHtml(row)) {
@@ -482,8 +555,9 @@ function renderRow(row) {
 
     // Installed, but SkyrimNet's registry does not list it yet (its files are in an enabled mod, or a folder named for it): the one warning line.
     if (row.notRegisteredYet) changesHtml += `<div class="req-warn">&#9888;&#65039; ${escapeHtml(row.notRegisteredYet)}</div>`;
+    changesHtml += dummyAskLine(row);
     return `<div class="row${modCovers.rowClass()}" data-row-id="${escapeHtml(row.id)}">
-        <div><div class="name">${escapeHtml(row.title)}${nsfwPill(row)}</div><div class="meta">${metaBits.join(' &middot; ') || '&nbsp;'}</div>${countsLine(row)}${modCovers.descSlot(row)}</div>
+        <div><div class="name">${escapeHtml(row.title)}${nsfwPill(row)}</div><div class="meta">${metaBits.join(' &middot; ') || '&nbsp;'}</div>${installedAsLine(row)}${countsLine(row)}${modCovers.descSlot(row)}</div>
         <div><div class="ver"${verTitle}>${verHtml}</div>${dateHtml}</div>
         ${right}
         ${changesHtml}
@@ -661,7 +735,7 @@ function groupHeader(label, groupRows, key) {
 // or closes it. Exactly ONE section is open when the page starts, chosen from the counts (Updates, else Up to date, else Mods not
 // installed) and re-chosen on every state until the check is complete; nothing is remembered between visits (a remembered choice is what used to leave two open). After that, only the person's own clicks
 // change what is open: a refresh never does.
-const SECTION_DEFAULTS = { new: false, updates: false, uptodate: false, nothub: false, notinstalled: false }; // the keys; the open one is picked by chooseStartupSection
+const SECTION_DEFAULTS = { new: false, updates: false, uptodate: false, nothub: false, disabled: false, notinstalled: false, excluded: false }; // the keys; the open one is picked by chooseStartupSection
 let sectionState = { ...SECTION_DEFAULTS };
 let sectionsDecided = false; // true once the start-up choice is final (the check is complete), or the person opened/closed something themselves
 // The rows arrive in stages (the update row can come after the others), so until the check is complete the choice is made again on every state: the open section
@@ -675,6 +749,19 @@ function chooseStartupSection(updatesCount, upToDateCount, notInstalledCount, fi
 // The check is complete: one has finished (lastCheckedAt), none is running or about to start, and no row is still waiting on Vortex's answer.
 function startupCheckComplete(state, rows) {
     return !!state.lastCheckedAt && !state.checking && !autoCheckPending && !rows.some((r) => r.vortexWaiting);
+}
+// The muted line under the pills while ModPacer is still gathering (a check is running, the first one has not finished, or a row says "Waiting for Vortex..."): the pills only
+// count what is confirmed so far, so their numbers can still change. '' = nothing to say (the line is empty and hidden): a settled page, no Vortex in use (Mod Organizer 2, Vortex closed or
+// without the Bridge), a banner that already explains the wait (Bridge not answering, Vortex on another game), a setup or check error. Gone by itself, no "done" message.
+const GATHER_LINE_VORTEX = 'Still looking through Vortex. These numbers might shift.';
+const GATHER_LINE_PLAIN = 'Still looking through your mods. These numbers might shift.';
+function gatherLineText(state, rows, firstCheckPending) {
+    if (!state || state.error || state.needsSetup) return '';
+    if (state.modManager !== 'vortex') return '';
+    if (state.helperInstalled === false || ['vortex_not_running', 'helper_not_installed', 'vortex_running_helper_unreachable', 'vortex_other_game'].includes(state.vortexHelperState)) return '';
+    // The automatic repeat (Vortex was still filling things in) is a Vortex wait too, even before a row says so: one line for it, so it never looks stuck.
+    if (state.vortexRetrying || rows.some((r) => r.vortexWaiting)) return GATHER_LINE_VORTEX;
+    return (state.checking || firstCheckPending) ? GATHER_LINE_PLAIN : '';
 }
 // While a search is on, the sections with a match open by themselves; the person's own clicks then go in searchOpen, so sectionState (what they had
 // before the first keystroke) is never touched and comes back exactly when the search is cleared.
@@ -857,7 +944,7 @@ async function programHaveCall(id, what, body) {
 }
 function programNote(row) { return row.programLine ? `<div class="prog-note">${escapeHtml(row.programLine)}</div>` : ''; }
 function installableRows(rows) {
-    return (rows || []).filter((r) => r.notInstalled && r.status === 'update_available' && hasDownload(r) && !r.sameAs && !r.notRegisteredYet); // a mod ModPacer is asking about is never part of a bulk install
+    return (rows || []).filter((r) => r.notInstalled && !r.unverifiedExcluded && !r.dummyMaster && r.status === 'update_available' && hasDownload(r) && !r.sameAs && !r.notRegisteredYet); // a mod ModPacer is asking about is never part of a bulk install
 }
 // A Hub listing whose name is close to a mod already in Vortex (lib/vortex-name-match.js): asked once, under the description.
 function sameAsLine(row) {
@@ -868,20 +955,44 @@ function sameAsLine(row) {
         + `<button data-action="same-yes" data-id="${escapeHtml(row.id)}"${off}>Yes, same mod</button></span></div>`;
 }
 const sameAsBusy = new Set();
-// Exclude (Mods not installed row) and Include again (Settings): saved at once, no message; the page redraws from the answer.
+// "Is this a dummy master (stub)?" (lib/dummy-master.js): a mod that is only an empty placeholder plugin asks once, inside its own row; Yes leaves it out, and the row then
+// sits under Mods not installed with one line and a way back. Success is silent.
+const dummyBusy = new Set();
+function dummyAskLine(row) {
+    if (!row.askDummy) return '';
+    const off = batchRunning || dummyBusy.has(row.id) ? ' disabled' : '';
+    const id = escapeHtml(row.id);
+    return `<div class="ni-same" style="grid-column:1 / -1"><span class="ni-same-q">Is this an empty placeholder (dummy master)?</span>`
+        + `<span class="ni-same-btns"><button class="btn-muted" data-action="dummy-no" data-id="${id}"${off}>No, it's the real deal</button>`
+        + `<button data-action="dummy-yes" data-id="${id}"${off}>Yes, exclude it</button></span></div>`;
+}
+// An excluded mod's row in the Excluded section: name, author, the icons and the "..." menu (Include again only); no line about being excluded (the group says it); the reason as a muted line only where there is one.
+function renderExcludedRow(row) {
+    const word = row.excludedWord ? `<div class="ni-more"><div class="muted">${escapeHtml(row.excludedWord)}</div></div>` : '';
+    return `<div class="row${modCovers.rowClass()}" data-row-id="${escapeHtml(row.id)}">
+        <div><div class="name">${escapeHtml(row.title)}${nsfwPill(row)}</div><div class="meta">${row.author ? escapeHtml(row.author) : '&nbsp;'}</div>${countsLine(row)}</div>
+        <div><div class="ver">&nbsp;</div></div>
+        <div class="right">${rowIconsHtml(row)}</div>
+        ${word}
+        ${modCovers.thumbHtml(row)}
+    </div>`;
+}
+async function answerDummy(id, answer) {
+    if (dummyBusy.has(id)) return;
+    dummyBusy.add(id);
+    if (lastRenderedState) renderPlugins(lastRenderedState);
+    let state = null;
+    try { state = await api('POST', `/api/plugins/${encodeURIComponent(id)}/dummy-master`, { answer }); } catch { state = null; }
+    dummyBusy.delete(id);
+    if (!state) { try { state = await api('GET', '/api/state'); } catch { state = null; } }
+    if (state) renderPlugins(state);
+}
+// Exclude (the "..." menu) and Include again (the Excluded section): saved at once, no message; the page redraws from the answer.
 async function excludeOrInclude(what, id) {
     let state = null;
     try { state = await api('POST', `/api/plugins/${encodeURIComponent(id)}/${what}`); } catch { state = null; }
     if (!state) { try { state = await api('GET', '/api/state'); } catch { state = null; } }
     if (state) renderPlugins(state);
-    try { await loadSettings(); } catch { /* the list is read again the next time Settings opens */ }
-}
-function paintExcludedMods(list) {
-    const items = Array.isArray(list) ? list : [];
-    $('excludedLabel').textContent = `Excluded mods (${items.length})`;
-    $('excludedList').innerHTML = items.length === 0
-        ? '<p class="hint">Nothing is excluded. Use Exclude on a mod\'s row to leave it alone.</p>'
-        : items.map((e) => `<div style="display:flex;align-items:center;gap:10px;margin:6px 0"><span style="flex:1;min-width:0"><b>${escapeHtml(e.title || e.id)}</b>${e.author ? ` <span class="muted">${escapeHtml(e.author)}</span>` : ''}</span><button class="su-muted" data-action="include-mod" data-id="${escapeHtml(e.id)}">Include again</button></div>`).join('');
 }
 async function answerSameAs(id, answer) {
     if (sameAsBusy.has(id)) return;
@@ -900,6 +1011,7 @@ function requiresLine(row) {
     return `<div class="req-warn">&#9888;&#65039; Requires ${list}. Install ${names.length === 1 ? 'it' : 'them'} before this mod.</div>`;
 }
 function notInstalledAction(row) {
+    if (row.unverifiedExcluded) return ''; // excluded although installed: nothing to download or install
     if (row.isProgram) return programButton(row) + `<button class="btn-muted" data-action="have-open" data-id="${escapeHtml(row.id)}">I have this</button>`;
     if (row.notRegisteredYet) return ''; // its files are already there; nothing to download, the line under the name says what to do
     const mo2 = currentManager === 'mo2';
@@ -943,7 +1055,7 @@ function renderNotInstalledRow(row) {
     return `<div class="row${modCovers.rowClass()}" data-row-id="${escapeHtml(row.id)}">
         <div><div class="name">${escapeHtml(row.title)}${nsfwPill(row)}</div><div class="meta">${metaBits.join(' &middot; ') || '&nbsp;'}</div>${countsLine(row)}</div>
         <div><div class="ver">${escapeHtml(row.latestVersion || '?')}</div>${newDate ? `<div class="dt">${escapeHtml(newDate)}</div>` : ''}</div>
-        <div class="right">${rowIconsHtml(row)}${newStatus}${action}${githubCurrentHtml(row)}<button class="su-link" data-action="exclude-mod" data-id="${escapeHtml(row.id)}">Exclude</button></div>
+        <div class="right">${rowIconsHtml(row)}${newStatus}${action}${githubCurrentHtml(row)}</div>
         ${more}${err}
         ${modCovers.thumbHtml(row)}
     </div>`;
@@ -1081,6 +1193,7 @@ document.addEventListener('keydown', (e) => { // / anywhere on the page (not ins
     $('modSearch').focus();
 });
 function renderPlugins(state) {
+    closeRowMenu(false); // a redraw replaces the row the menu belongs to
     appliedSeq = ++stateSeq; // anything asked for before this paint is older than it
     lastRenderedState = state;
     paintSkyrimNetFound();
@@ -1096,6 +1209,7 @@ function renderPlugins(state) {
         $('topError').style.display = state.needsSetup || notFound ? 'none' : 'block';
         $('topError').textContent = state.needsSetup || notFound ? '' : state.error;
         $('summary').innerHTML = '';
+        $('gatherLine').textContent = '';
         $('pluginList').innerHTML = '';
         $('sortRow').style.display = 'none';
         $('subtitle').textContent = '';
@@ -1111,9 +1225,12 @@ function renderPlugins(state) {
 
     modCovers.configure({ show: state.showModPictures, adult: state.showAdultNotInstalled });
     const allRows = state.rows || [];
-    const rows = allRows.filter((r) => !r.notInstalled); // the mods found in the SkyrimNet install; the not-installed listings have their own section
-    const newRows = allRows.filter((r) => r.notInstalled && r.isNew); // already in the server's order: newest first
-    const niRows = allRows.filter((r) => r.notInstalled && !r.isNew);
+    const rows = allRows.filter((r) => !r.notInstalled && !r.disabledMod); // the mods found in the SkyrimNet install; the not-installed listings have their own section
+    const disabledRows = allRows.filter((r) => r.disabledMod); // switched off in the mod manager, with "Ignore disabled mods" on: their own section, never counted or checked
+    // Every excluded mod lives in the Excluded section: the listings excluded while not installed (the server sends them apart), an installed mod the person excluded, a dummy master.
+    const excludedAll = allRows.filter((r) => r.unverifiedExcluded || r.dummyMaster).concat(state.excludedRows || []).map((r) => ({ ...r, inExcluded: true, excludedWord: r.dummyMaster ? 'Placeholder mod' : (r.excludedReason === 'unverified' ? 'Installed, not verified' : '') }));
+    const newRows = allRows.filter((r) => r.notInstalled && r.isNew && !r.unverifiedExcluded && !r.dummyMaster); // already in the server's order: newest first
+    const niRows = allRows.filter((r) => r.notInstalled && !r.isNew && !r.unverifiedExcluded && !r.dummyMaster);
     nexusKeySet = !!state.nexusKeySet;
     currentManager = state.modManager;
     currentPlatform = state.platform || 'win32';
@@ -1130,6 +1247,9 @@ function renderPlugins(state) {
     const notOnHub = sortRows(rows.filter((r) => r.status === 'not_on_hub'), 'notOnHub');
     const leftHub = sortRows(rows.filter((r) => r.status === 'left_hub'), 'notOnHub'); // had a Hub entry that is gone: drawn first inside Not on the Hub (one section, one count), counted in no tile and not in Up to date
     const notOnHubAll = leftHub.concat(notOnHub); // the mods that left first, then the never-listed ones, each in its own order
+    const disabledSorted = modSort === 'list' ? rowState.sortGroup(disabledRows, 'disabled') : rowState.sortByName(disabledRows, modSort);
+    const niCounted = niRows; // excluded mods are not in niRows: they are counted in the Excluded pill and section only
+    const excludedSorted = modSort === 'list' ? excludedAll.slice().sort((a, b) => String(a.title || '').localeCompare(String(b.title || ''), 'en', { sensitivity: 'base' })) : rowState.sortByName(excludedAll, modSort);
     const niSorted = modSort === 'list' ? niRows : rowState.sortByName(niRows, modSort);
     paintSortRow(allRows.length > 0);
 
@@ -1138,17 +1258,20 @@ function renderPlugins(state) {
         ? `<div class="stat ${cls} go" data-action="goto-section" data-target="${target}" role="button" tabindex="0" title="${hint}"><div class="n">${n}</div><div class="l">${label}</div></div>`
         : `<div class="stat ${cls}"><div class="n">${n}</div><div class="l">${label}</div></div>`;
     const upToDateCount = upToDate.filter((r) => !r.vortexWaiting && !r.versionUnconfirmed).length + notOnHub.length;
-    chooseStartupSection(updates.length, upToDate.length, niRows.length, startupCheckComplete(state, rows), newRows.length); // the same counts the section headers show
+    chooseStartupSection(updates.length, upToDate.length, niCounted.length, startupCheckComplete(state, rows), newRows.length); // the same counts the section headers show
     $('summary').innerHTML = [
         newRows.length > 0 ? tile('new', 'new', 'Show the mods that are new on the Hub', newRows.length, 'New') : '',
         tile('upd', updates.length > 0 ? 'updates' : '', 'Show the mods that have updates', updates.length, `${plural(updates.length, 'Update', 'Updates')} ready`),
         tile('nx', needsYou.length > 0 ? 'nexus' : '', 'Show the mods you need to download from Nexus', needsYou.filter((r) => !r.linkOutOfDate).length, 'Download from Nexus'),
         tile('ok', upToDate.length > 0 ? 'uptodate' : (notOnHubAll.length > 0 ? 'nothub' : ''), 'Show the mods that are up to date', upToDateCount, 'Up to date'),
-        state.notInstalledState === 'unreadable' ? '' : tile('ni', 'notinstalled', 'Show the mods that are not installed', niRows.length, 'Not installed'),
+        disabledRows.length > 0 ? tile('dis', 'disabled', 'Show your disabled mods', disabledRows.length, 'Disabled') : '', // only with Ignore disabled mods on and at least one disabled mod
+        state.notInstalledState === 'unreadable' ? '' : tile('ni', 'notinstalled', 'Show the mods that are not installed', niCounted.length, 'Not installed'),
+        excludedAll.length > 0 ? tile('exc', 'excluded', 'Show your excluded mods', excludedAll.length, 'Excluded') : '', // never drawn at zero
     ].join('');
 
     // One legend for the whole page, under the summary tiles, so it is there even when every section is closed.
     $('legendLine').innerHTML = legendHtml(allRows);
+    $('gatherLine').textContent = gatherLineText(state, rows, autoCheckPending);
 
     const pendingDownloadCount = rows.filter((r) => r.status === 'update_available' && !r.isProgram).length;
     const searching = searchTerms.length > 0 && allRows.length > 0;
@@ -1164,7 +1287,7 @@ function renderPlugins(state) {
     // The search: each list shows only its matches (the tiles above and the engine keep the full counts).
     const terms = searching ? searchTerms : [];
     const shown = (list) => window.modSearch.filter(list, terms);
-    const fUpdates = shown(updates), fNeedsYou = shown(needsYou), fUpToDate = shown(upToDate), fNotOnHub = shown(notOnHubAll), fNi = shown(niSorted), fNew = shown(newRows);
+    const fUpdates = shown(updates), fNeedsYou = shown(needsYou), fUpToDate = shown(upToDate), fNotOnHub = shown(notOnHubAll), fNi = shown(niSorted), fNew = shown(newRows), fDisabled = shown(disabledSorted), fExcluded = shown(excludedSorted);
     const ofText = (f, all) => (searching ? `${f.length} of ${all.length}` : String(all.length));
     let html = newSectionHtml(fNew, newRows.length);
     if (fUpdates.length > 0) {
@@ -1178,7 +1301,9 @@ function renderPlugins(state) {
     if (fNeedsYou.length > 0) html += groupHeader('Download from Nexus', fNeedsYou, 'nexus') + fNeedsYou.map(renderRow).join('');
     if (fUpToDate.length > 0) html += sectionHtml('uptodate', 'Up to date', ofText(fUpToDate, upToDate), fUpToDate, '', fUpToDate.map(renderRow).join(''));
     if (fNotOnHub.length > 0) html += sectionHtml('nothub', 'Not on the Hub', ofText(fNotOnHub, notOnHubAll), fNotOnHub, '', fNotOnHub.map(renderRow).join('')); // closed until the person opens it; nothing drawn when there are none
+    if (fDisabled.length > 0) html += sectionHtml('disabled', 'Disabled', ofText(fDisabled, disabledSorted), fDisabled, '', fDisabled.map(renderRow).join('')); // closed until the person opens it; nothing drawn when there are none
     html += notInstalledSectionHtml(state, fNi, niSorted.length);
+    if (fExcluded.length > 0) html += sectionHtml('excluded', 'Excluded', ofText(fExcluded, excludedSorted), fExcluded, '', fExcluded.map(renderExcludedRow).join('')); // the last section, closed until the person opens it; nothing drawn when there are none
     if (searching && html === '') html = `<p class="muted">No mods found.</p>`;
     // Before the very first check, this card would otherwise just be an empty box (director, from
     // a live screenshot, 2026-09-30: "Not checked yet.", three zeros, and nothing underneath) --
@@ -1187,8 +1312,6 @@ function renderPlugins(state) {
     if (rows.length === 0 && !state.lastCheckedAt) {
         html = (autoCheckPending || state.checking) ? `<p class="muted">Checking for updates&hellip;</p>` : `<p class="muted">Click <b>Check now</b> to look for mod updates.</p>`;
     }
-    // The automatic repeat is running (Vortex was still filling things in): say so, so it never looks stuck.
-    $('retryNote').style.display = state.vortexRetrying ? '' : 'none';
     $('pluginList').innerHTML = html;
     if (fNew.length > 0) reportNewShown(fNew.map((r) => r.id));
     modCovers.afterPaint($('pluginList')); // fills the descriptions already known and starts watching what is on screen; nothing is asked for until a row is seen
@@ -1350,6 +1473,9 @@ document.addEventListener('click', async (e) => {
     } else if (action === 'same-yes' || action === 'same-no') {
         e.preventDefault();
         await answerSameAs(el.dataset.id, action === 'same-yes' ? 'yes' : 'no');
+    } else if (action === 'dummy-yes' || action === 'dummy-no') {
+        e.preventDefault();
+        await answerDummy(el.dataset.id, action === 'dummy-yes' ? 'yes' : 'no');
     } else if (action === 'have-open' || action === 'have-cancel') {
         e.preventDefault();
         if (action === 'have-open') haveAsking.set(el.dataset.id, ''); else haveAsking.delete(el.dataset.id);
@@ -1367,9 +1493,17 @@ document.addEventListener('click', async (e) => {
     } else if (action === 'have-undo') {
         e.preventDefault();
         await programHaveCall(el.dataset.id, 'program-not-have');
-    } else if (action === 'exclude-mod' || action === 'include-mod') {
+    } else if (action === 'row-menu') {
         e.preventDefault();
-        await excludeOrInclude(action === 'exclude-mod' ? 'exclude' : 'include', el.dataset.id);
+        openRowMenu(el);
+    } else if (action === 'menu-skip' || action === 'menu-exclude' || action === 'menu-include') {
+        e.preventDefault();
+        const id = el.dataset.id;
+        closeRowMenu(false);
+        if (action === 'menu-skip') await skipUpdateClick(id); else await excludeOrInclude(action === 'menu-include' ? 'include' : 'exclude', id);
+    } else if (action === 'stop-skipping') {
+        e.preventDefault();
+        await excludeOrInclude('include', el.dataset.id);
     } else if (action === 'install-new') {
         e.preventDefault();
         await installNewClick(el.dataset.id);
@@ -1499,7 +1633,7 @@ async function openConfirm(id) {
         <div class="label">Install</div><div class="one-line" title="${escapeHtml(row.latestVersion)}">${escapeHtml(row.latestVersion)}</div>
         <div class="label">In Vortex</div><div class="clamp2" title="Not there yet, so it's added as a new mod">Not there yet, so it's added as a new mod</div>
     ` : `
-        <div class="label">Update to</div><div class="one-line" title="${escapeHtml(row.latestVersion)}">${escapeHtml(row.latestVersion)}</div>
+        <div class="label">Update to</div><div class="one-line" title="${escapeHtml(row.willInstallVersion || row.latestVersion)}">${escapeHtml(row.willInstallVersion || row.latestVersion)}</div>
         <div class="label">Collection</div><div class="clamp2">${collectionLineHtml(row)}</div>
         <div class="label">Previous version</div><div>${previousVersionText(cfg)}</div>
     `;
@@ -1851,7 +1985,7 @@ function installSkipWhy(row) {
 async function openConfirmInstallAll() {
     if (batchRunning || installAllBusy) return;
     const state = await api('GET', '/api/state');
-    const ni = (state.rows || []).filter((r) => r.notInstalled && !r.isNew && r.status === 'update_available' && !r.isProgram && !r.sameAs && !r.notRegisteredYet);
+    const ni = (state.rows || []).filter((r) => r.notInstalled && !r.unverifiedExcluded && !r.dummyMaster && !r.isNew && r.status === 'update_available' && !r.isProgram && !r.sameAs && !r.notRegisteredYet);
     const mo2 = state.modManager === 'mo2';
     const eligible = ni.filter(hasDownload);
     if (eligible.length === 0) { renderPlugins(state); return; }
@@ -2142,10 +2276,10 @@ async function loadSettings() {
     $('checkOnVortexStartToggle').classList.toggle('off', !cfg.checkOnVortexStart);
     $('autoDownloadToggle').classList.toggle('off', !cfg.autoDownload);
     $('showAdultToggle').classList.toggle('off', !cfg.showAdultNotInstalled);
-    paintExcludedMods(cfg.excludedMods);
     $('tellNewModPacerToggle').classList.toggle('off', cfg.tellNewModPacer === false);
     $('keepLogToggle').classList.toggle('off', cfg.keepLog === false);
     $('showModPicturesToggle').classList.toggle('off', cfg.showModPictures === false);
+    $('ignoreDisabledModsToggle').classList.toggle('off', !cfg.ignoreDisabledMods);
     adultConfirmed = !!cfg.adultConfirmed;
     $('deleteOldDownloadToggle').classList.toggle('off', !cfg.deleteOldDownloadAfterUpdate);
     $('skyrimInstallStatus').textContent = cfg.skyrimInstallPath ? '' : '';
@@ -2355,6 +2489,7 @@ wireToggle($('autoDownloadToggle'), 'autoDownload');
 wireToggle($('tellNewModPacerToggle'), 'tellNewModPacer');
 wireToggle($('keepLogToggle'), 'keepLog');
 wireToggle($('showModPicturesToggle'), 'showModPictures');
+wireToggle($('ignoreDisabledModsToggle'), 'ignoreDisabledMods');
 wireToggle($('deleteOldDownloadToggle'), 'deleteOldDownloadAfterUpdate');
 
 // --- SkyrimNet theme ---

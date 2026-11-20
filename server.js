@@ -231,16 +231,49 @@ function buildApp() {
         }
     });
 
+    // "Is this a dummy master (stub)?": Yes (exclude it) or No, and "It is the real mod" on an excluded row ('real'). The id must be a current row that asks (or is
+    // excluded); saved in ModPacer's own list, then a fresh check moves the row. Behind the local guard like every route.
+    app.post('/api/plugins/:id/dummy-master', async (req, res) => {
+        const r = engine.answerDummy(req.params.id, req.body && req.body.answer);
+        if (!r.ok) return res.status(r.status).json({ error: r.error });
+        try {
+            await engine.check({ force: false });
+            await engine.refreshUpdatePreviews();
+            res.json(engine.getState());
+        } catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+
     // Exclude / Include again (Mods not installed). Both answer with the new state, so the page redraws at once.
-    app.post('/api/plugins/:id/exclude', (req, res) => {
+    app.post('/api/plugins/:id/exclude', async (req, res) => {
         const r = engine.excludeMod(req.params.id);
+        if (!r.ok) return res.status(r.status).json({ error: r.error });
+        if (!r.unverified) return res.json(engine.getState());
+        try { // an installed mod that could not be verified moves out of the installed rows at once, not at the next check
+            await engine.check({ force: false });
+            await engine.refreshUpdatePreviews();
+            res.json(engine.getState());
+        } catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+    app.post('/api/plugins/:id/skip-update', (req, res) => {
+        const r = engine.skipUpdate(req.params.id);
         if (!r.ok) return res.status(r.status).json({ error: r.error });
         res.json(engine.getState());
     });
-    app.post('/api/plugins/:id/include', (req, res) => {
+    app.post('/api/plugins/:id/include', async (req, res) => {
         const r = engine.includeMod(req.params.id);
         if (!r.ok) return res.status(r.status).json({ error: r.error });
-        res.json(engine.getState());
+        if (!r.dummy) return res.json(engine.getState());
+        try { // a dummy master goes back to installed at once, not at the next check
+            await engine.check({ force: false });
+            await engine.refreshUpdatePreviews();
+            res.json(engine.getState());
+        } catch (e) {
+            res.status(500).json({ error: e.message });
+        }
     });
 
     // "I have this" / "I updated it" / "I don't have this" on a program row: saved in ModPacer's own list, answered with the new state (no check, no Vortex).
@@ -490,6 +523,8 @@ function buildApp() {
         if (('downloadFolder' in patch || 'autoDownload' in patch) && next.autoDownload && next.downloadFolder) {
             engine.maybeAutoDownloadNow().catch(() => {});
         }
+        // "Ignore disabled mods" moves rows between sections, so the list is worked out again (the same quiet check as any other).
+        if ('ignoreDisabledMods' in toSave) engine.check({ force: false }).catch(() => {});
     });
 
     // What a settings save changed, for the log: the names, the folders and switches by value, and for the Nexus key only whether
@@ -661,7 +696,8 @@ function logStart(mode, port) {
 // exactly the "skip the notification if the helper endpoint isn't there yet" the task asked for.
 // The rows worth a notification: installed mods with a real update only (never a "Mods not installed" listing).
 function updateRowsToReport(rows) {
-    return (rows || []).filter((r) => !r.notInstalled && ['downloaded', 'queued', 'downloading', 'update_available'].includes(r.status));
+    const cfg = appConfig.loadConfig();
+    return (rows || []).filter((r) => !r.notInstalled && ['downloaded', 'queued', 'downloading', 'update_available'].includes(r.status) && !engine.leftOutReason(r, cfg)); // an excluded, skipped or disabled mod is never named
 }
 // What is true about them: all downloaded, all downloaded-or-on-their-way, or (anything still waiting) just available.
 function updateNotificationMessage(items) {

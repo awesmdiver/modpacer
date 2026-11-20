@@ -37,7 +37,7 @@
     </div>
     <div class="summary" id="summary"></div>
     <div class="legend-line" id="legendLine"></div>
-    <div id="retryNote" style="display:none;font-size:1rem;font-weight:600;margin-top:12px">Please be patient while Vortex checks the status of your mods.</div>
+    <div class="gather-line" id="gatherLine" role="status"></div>
     <div id="deployLine"></div>
     <div id="selfUpdateLine"></div>
     <p class="error" id="topError" style="display:none"></p>
@@ -118,15 +118,12 @@
       <label class="toggle" id="deleteOldLabel"><span class="sw" id="deleteOldDownloadToggle"></span><span><b>Automatically remove previous version after update</b></span></label>
       <div style="display:flex;align-items:center;gap:10px"><label class="toggle" style="flex:1"><span class="sw" id="keepLogToggle"></span><span><b>Enable logging</b></span></label><button class="su-muted" id="openLogFolderBtn">Open log folder</button></div>
       <label class="toggle"><span class="sw" id="showModPicturesToggle"></span><span><b>Show mod pictures</b><div class="muted">Turn off for a more compact list.</div></span></label>
+      <label class="toggle"><span class="sw off" id="ignoreDisabledModsToggle"></span><span><b>Ignore disabled mods</b><div class="muted">Stop checking turned-off mods for updates and tuck them away in their own list.</div></span></label>
       <label class="toggle"><span class="sw" id="tellNewModPacerToggle"></span><span><b>Notify when ModPacer updates are available</b></span></label>
       <label class="toggle" id="checkOnVortexStartLabel"><span class="sw" id="checkOnVortexStartToggle"></span><span><b>Check when Vortex starts</b></span></label>
       <label class="toggle"><span class="sw" id="autoDownloadToggle"></span><span><b>Download updates automatically</b></span></label>
     </div>
 
-    <div class="field" id="excludedField">
-      <div class="label" id="excludedLabel">Excluded mods (0)</div>
-      <div id="excludedList"></div>
-    </div>
   </div>
 
   <div class="card" id="moreFromMe"></div>

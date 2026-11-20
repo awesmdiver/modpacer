@@ -95,6 +95,8 @@ button:disabled, button.primary:disabled { background:var(--panel); border-color
 .legend span { display:inline-flex; gap:5px; align-items:center }
 .legend-line { display:flex; justify-content:flex-end; color:var(--muted); font-size:0.75rem; margin:10px 0 0 }
 .legend-line:empty { display:none }
+.gather-line { color:var(--muted); font-size:0.75rem; margin:10px 0 0 }
+.gather-line:empty { display:none }
 /* Expandable sections: chevron + name + (count), the section's own action right-justified, the choice remembered. */
 .sec-h { cursor:pointer; user-select:none; flex-wrap:wrap; row-gap:6px }
 .sec-h .sec-t { display:inline-flex; align-items:center; gap:8px }
@@ -108,7 +110,7 @@ button:disabled, button.primary:disabled { background:var(--panel); border-color
 /* A closed section shows just its name and count: its action (Install all) appear once it is open. Updates keeps Update all. */
 .sec:not(.open):not([data-section="updates"]) > .sec-h .sec-act { display:none }
 .sec-body .note { color:var(--muted); font-size:0.85rem; margin:8px 0 }
-.stat.ni .n { color:var(--text) } .stat.go { cursor:pointer }
+.stat.ni .n, .stat.dis .n, .stat.exc .n { color:var(--text) } .stat.go { cursor:pointer }
 .stat.go:focus-visible { outline:1px solid var(--accent-text); outline-offset:2px }
 .hub-ico { color:var(--muted); display:inline-flex; align-items:center; text-decoration:none }
 .hub-ico svg, .hub-ico img { display:block }
@@ -401,3 +403,11 @@ button.su-muted { background:none; color:var(--muted) }
 .extra-line { display:flex; align-items:center; gap:10px; flex-wrap:wrap; color:var(--muted) }
 .extra-line .fn { font-family:monospace; font-size:0.82rem; color:var(--text); word-break:break-all }
 .extra-line button { padding:2px 12px; font-size:0.8rem }
+
+/* The "..." button after a row's icons and its menu (2026-11-19): quiet until opened. */
+.icons .row-more { background:none; border:0; padding:0; margin:0; font:inherit; color:var(--muted); cursor:pointer; line-height:1; letter-spacing:1px; font-weight:700 }
+.icons .row-more:hover, .icons .row-more.open, .icons .row-more:focus-visible { color:var(--text); filter:none }
+.row-menu { position:fixed; z-index:50; min-width:200px; max-width:280px; background:var(--panel, #2a2a30); border:1px solid var(--line, #444); border-radius:8px; padding:4px; box-shadow:0 8px 24px rgba(0,0,0,0.5) }
+.row-menu .row-menu-item { display:block; width:100%; text-align:left; background:none; border:0; border-radius:5px; padding:7px 12px; color:var(--text); font-size:0.86rem; cursor:pointer }
+.row-menu .row-menu-item:hover, .row-menu .row-menu-item:focus-visible { background:color-mix(in srgb, var(--accent) 18%, var(--panel, #2a2a30)); filter:none }
+.row-menu .row-menu-item small { display:block; color:var(--muted); font-size:0.74rem; margin-top:1px; white-space:normal }

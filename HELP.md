@@ -4,12 +4,18 @@ Easily install new mods and keep them on pace with updates. This page answers co
 
 ## The page at a glance
 
-The top of the page has four tiles. Click one to jump to its section.
+The top of the page has tiles that count your mods. Click one to jump to its section.
 
 - **Updates ready:** Mods you have that have a newer version. Click **Update** on one, or **Update all**.
 - **Download from Nexus:** Mods where the new version is only on Nexus. ModPacer opens the Nexus page for you. (If you add a Nexus Premium key, ModPacer can download them for you!)
 - **Up to date:** Mods that are already on the latest version.
 - **Not installed:** Mods in the catalog that you don't have yet. Click **Install** on one, or **Install all**.
+- **Disabled:** Mods you turned off in your mod manager. This tile only shows if you have at least one disabled mod and **Ignore disabled mods** is turned on in your **Settings**.
+- **Excluded:** Mods you told ModPacer to leave alone. This tile only shows when you have actually excluded something.
+
+Tiles with nothing to count are hidden. While ModPacer reads your mods, a short line under the tiles says **Still gathering information. These numbers may change.** This message goes away by itself when finished.
+
+**Not on the Hub:** Mods you have installed that the Plugin Hub does not list. If a mod used to be on the Hub but was removed, its row will tell you.
 
 **Which section is open:** When ModPacer starts, it opens the first section that has something in it: **Updates** if there is an update, otherwise **Up to date**. Open or close any section yourself and ModPacer leaves it exactly how you set it.
 
@@ -22,6 +28,37 @@ The top of the page has four tiles. Click one to jump to its section.
 **Programs, not mods:** A few things on the Hub are standalone programs with their own installers, like **SkyrimNet MultiProxy**, **PandorumLLM**, and ModPacer itself. ModPacer never tries to install these into Vortex or Mod Organizer 2. Instead, their row shows the version, lets you know if a newer one is out, and gives you an **Open download page** button so you grab it and set it up yourself.
 
 **"Installed, but Vortex doesn't know its version":** This shows for hand-installed mods. ModPacer first checks the file name for a version (like `v0-3`) and offers an **Update** if yours is older. If the file name also has no version, you get a choice. Click **Update** to install the latest version, or **It's <version>** if you already have it. If you click that by mistake, **Update anyway** lets you fix it.
+
+## The "..." menu, skipping and excluding
+
+Every mod has a **...** button next to its two small icons. Click it to open a short menu:
+
+- **Skip this update:** This option appears when a mod has an update. ModPacer skips that specific version. The mod moves to the **Up to date** section with a note saying **Skipping 2.6.0** (with the actual version number) and a **Stop skipping** link. When a newer version comes out later, the update shows up again automatically.
+- **Exclude this mod:** ModPacer leaves the mod alone completely. It never checks, downloads, or updates it. The mod also will not appear in your Vortex update notices. Instead, it moves to the **Excluded** section at the bottom of the page. Use this for mods you manage yourself or just do not want to hear about.
+
+**Changing your mind:** Open the **...** menu on a mod in the **Excluded** section and click **Include again**. The mod goes right back to where it belongs. To cancel a skipped update, just click **Stop skipping**.
+
+## Disabled mods
+
+Sometimes you install a mod just for its mesh or texture files, then turn it off in your mod manager. ModPacer keeps offering updates for these disabled mods, which is not very helpful.
+
+To fix this, turn on **Ignore disabled mods** in **Settings**. The mods you turned off will stop showing up as updates. Instead, they move to their own **Disabled** section just above **Mods not installed**. ModPacer will not check or download them. Turn a mod back on in your mod manager, and it returns to the normal sections during the next check. This switch is off by default.
+
+If ModPacer cannot tell whether a mod is turned on (like when Vortex is closed), it assumes the mod is on and shows it normally.
+
+## Empty placeholder plugins ("dummy masters")
+
+Some players keep a tiny empty plugin file in place of a removed mod so an older save game still loads. ModPacer calls this a dummy master or stub. When a mod looks like a placeholder, its row asks **Is this an empty placeholder (dummy master)?**
+
+Click **Yes, exclude it**, and ModPacer leaves it alone. The mod moves to the **Excluded** section and is marked as a **Placeholder mod**. Click **No, it's the real deal**, and ModPacer treats it normally and will never ask again.
+
+If ModPacer cannot verify that a mod is real, you can still exclude it using the **...** menu. In the **Excluded** section, it will show a note saying **Installed, not verified**.
+
+## Newer versions on GitHub or Nexus
+
+Sometimes a mod author's GitHub or Nexus page has a newer version than the Plugin Hub lists. When this happens, a link appears under the mod's button saying **Current GitHub version: 1.2.3** or **Current Nexus version: 1.2.3**.
+
+Click the link to open their page and download the newer version yourself. The install button will still only install the version listed on the Hub. Note that Nexus links require you to enter your Nexus key in **Settings**.
 
 ## Vortex Bridge (for Vortex users)
 
