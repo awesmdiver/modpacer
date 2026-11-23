@@ -1,0 +1,44 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+  /* The window follows the system light/dark setting (no script). Colours live here once; dark repeats them. Dark matches ModPacer's own default dark theme. */
+  :root {
+    color-scheme: light dark;
+    --bg: #f4f2ee; --text: #1c1a16; --muted: #5a574f; --field: #ffffff; --line: #b9b4a8;
+    --accent: #8a5f0a; --on-accent: #ffffff; --focus: #8a5f0a;
+    --ok: #136b33; --off: #6b6b70; --warn: #8a4a06;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #18181c; --text: #e8e6e1; --muted: #b3b1ac; --field: #202025; --line: #4a4a52;
+      --accent: #d4a855; --on-accent: #18181c; --focus: #d4a855;
+      --ok: #7cefab; --off: #8a8a8f; --warn: #e8941a;
+    }
+  }
+  body { font: 13px/1.4 system-ui, sans-serif; width: 300px; padding: 12px; margin: 0; background: var(--bg); color: var(--muted); }
+  h1 { font-size: 15px; font-weight: 600; margin: 0 0 10px; color: var(--text); }
+  p { margin: 8px 0; }
+  #state { color: var(--text); font-weight: 600; margin: 0 0 14px; }
+  label { color: var(--muted); }
+  .muted { color: var(--muted); font-size: 12px; }
+  input { width: 100%; box-sizing: border-box; padding: 6px 8px; margin: 6px 0 10px; font-size: 14px; letter-spacing: 1px; background: var(--field); color: var(--text); border: 1px solid var(--line); border-radius: 6px; }
+  input:focus { outline: 2px solid var(--focus); outline-offset: 1px; }
+  button { padding: 6px 12px; margin-right: 8px; font: inherit; color: var(--text); background: transparent; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+  button:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+  button:hover { border-color: var(--accent); }
+  #connect { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; background: var(--off); }
+  .dot.ok { background: var(--ok); }
+  .dot.warn { background: var(--warn); }
+</style>
+<h1>ModPacer browser helper</h1>
+<p id="state"><span class="dot" id="dot"></span><span id="stateText"></span></p>
+<div id="pairBox">
+  <label for="code">Paste the code from ModPacer</label>
+  <input id="code" autocomplete="off" spellcheck="false" maxlength="20">
+  <button id="connect">Connect</button>
+</div>
+<p><button id="allow">Allow LoversLab</button><button id="check">Check now</button></p>
+<p class="muted" id="msg"></p>
+<p class="muted" id="version"></p>
+<script src="popup.js"></script>

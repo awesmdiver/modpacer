@@ -21,7 +21,7 @@ async function api(method, url, body) {
         body: body ? JSON.stringify(body) : undefined,
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) { const err = new Error(data.error || `Request failed (${res.status})`); if (data.kind) err.kind = data.kind; throw err; }
+    if (!res.ok) { const err = new Error(data.error || `Request failed (${res.status})`); if (data.kind) err.kind = data.kind; if (data.fileName) err.fileName = data.fileName; throw err; }
     return data;
 }
 
@@ -92,63 +92,71 @@ document.querySelectorAll('.tab').forEach((tab) => {
     });
 });
 
-// --- Help tab (queue: help-tab-with-the-guide-and-a-section-for-mod-authors) ---
-// The guide is release/HELP.md rendered by the server (GET /api/help): a contents list on the left, the sections on the right (the page's own
-// openable-section pattern). "The page at a glance" and "For mod authors" start open. No icons.
-const HELP_OPEN_AT_START = ['the-page-at-a-glance'];
+// --- Help tab (queue: help-tab-pages-instead-of-expand-and-collapse-cards, 2026-11-22) ---
+// The guide is release/HELP.md rendered by the server (GET /api/help). The list on the left (four groups) picks ONE page; it shows alone on the right.
+// Nothing opens or closes. The tab opens on "The page at a glance" every time unless a link names a page (`#help/<section id>` or openHelpPage(id)). No icons.
+const HELP_FIRST_PAGE = 'the-page-at-a-glance';
 const HELP_MISSING_TEXT = "The guide isn't here right now. Reinstalling ModPacer brings it back.";
+// The groups of the list, in order. A section the list does not name goes into Start here (and tests/test-help-tab.js fails until it is placed on purpose).
+const HELP_GROUPS = [ // the section ids (the guide's own headings, lower-cased with dashes)
+    { name: 'Start here', ids: ['the-page-at-a-glance', 'adding-a-mod-you-follow-yourself-beta', 'the-browser-helper-only-for-loverslab'] },
+    { name: 'Your mods', ids: ['the-menu-skipping-and-excluding', 'disabled-mods', 'empty-placeholder-plugins-dummy-masters', 'newer-versions-on-github-or-nexus', 'requires-x', 'visits-endorsements-and-the-plugins-page'] },
+    { name: 'Mod managers', ids: ['vortex-bridge-for-vortex-users', 'installing-and-updating', 'how-to-change-your-mod-manager-in-modpacer', 'adult-nsfw-mods'] },
+    { name: 'For mod authors', ids: ['for-mod-authors'] },
+    { name: 'Privacy and trouble', ids: ['privacy', 'fixing-a-stuck-update', 'stuck'] },
+];
+function helpGroupOf(id) {
+    const g = HELP_GROUPS.find((x) => x.ids.includes(id));
+    return g ? g.name : HELP_GROUPS[0].name;
+}
 let helpLoaded = false;
+let helpWantedPage = null; // a page a link asked for before the guide was drawn
 function reducedMotion() { return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); }
 async function loadHelp() {
-    if (helpLoaded) return;
+    if (helpLoaded) { showHelpPage(helpWantedPage || HELP_FIRST_PAGE); helpWantedPage = null; return; }
     let data;
     try { data = await api('GET', '/api/help'); } catch { data = { ok: false }; }
     const box = $('helpBody');
     if (!data || !data.ok) { box.innerHTML = `<p class="muted" id="helpMissing">${escapeHtml(HELP_MISSING_TEXT)}</p>`; return; }
     helpLoaded = true;
-    const toc = data.sections.map((s) => `<a href="#help-${escapeHtml(s.id)}" data-action="help-goto" data-help-id="${escapeHtml(s.id)}">${escapeHtml(s.title)}</a>`).join('');
-    const secs = data.sections.map((s) => {
-        const open = HELP_OPEN_AT_START.includes(s.id);
-        return `<div class="sec help-sec${open ? ' open' : ''}${s.id === 'for-mod-authors' ? ' help-authors' : ''}" id="help-${escapeHtml(s.id)}" data-help-sec="${escapeHtml(s.id)}"><div class="sec-h help-sec-h" data-action="help-toggle" role="button" tabindex="0" aria-expanded="${open}"><span class="sec-t"><span class="chev">&#9654;</span><span>${escapeHtml(s.title)}</span></span></div><div class="sec-body help-body">${s.html}</div></div>`;
+    const withGroup = data.sections.map((s) => ({ ...s, group: helpGroupOf(s.id) }));
+    const toc = HELP_GROUPS.map((g) => {
+        const items = withGroup.filter((s) => s.group === g.name);
+        if (!items.length) return '';
+        return `<div class="help-group">${escapeHtml(g.name)}</div>` + items.map((s) => `<a href="#help/${escapeHtml(s.id)}" data-action="help-goto" data-help-id="${escapeHtml(s.id)}">${escapeHtml(s.title)}</a>`).join('');
     }).join('');
-    box.innerHTML = `<h1>Help</h1><div class="help-lead">${data.lead}</div><div class="help-layout"><nav class="help-toc" aria-label="Contents">${toc}</nav><div class="help-main">${secs}</div></div>`;
-    markHelpInView();
+    const pages = withGroup.map((s) => `<section class="help-sec help-page${s.id === 'for-mod-authors' ? ' help-authors' : ''}" id="help-${escapeHtml(s.id)}" data-help-sec="${escapeHtml(s.id)}" hidden><div class="help-eyebrow">${escapeHtml(s.group)}</div><h2 class="help-sec-h">${escapeHtml(s.title)}${s.parts ? `<span class="help-count">${s.parts} parts</span>` : ''}</h2><div class="help-body">${s.html}</div></section>`).join('');
+    box.innerHTML = `<h1>Help</h1><div class="help-lead">${data.lead}</div><div class="help-layout"><nav class="help-toc" aria-label="Contents">${toc}</nav><div class="help-main">${pages}</div></div>`;
+    showHelpPage(helpWantedPage || HELP_FIRST_PAGE);
+    helpWantedPage = null;
 }
-function setHelpOpen(sec, open) {
-    sec.classList.toggle('open', open);
-    const h = sec.querySelector('.help-sec-h');
-    if (h) h.setAttribute('aria-expanded', String(open));
+// Shows one page and hides the rest; an unknown id shows the first page.
+function showHelpPage(id) {
+    const pages = [...document.querySelectorAll('.help-page')];
+    if (!pages.length) return;
+    const on = pages.find((p) => p.dataset.helpSec === id) || pages.find((p) => p.dataset.helpSec === HELP_FIRST_PAGE) || pages[0];
+    pages.forEach((p) => { p.hidden = p !== on; });
+    document.querySelectorAll('.help-toc a').forEach((a) => { const isOn = a.dataset.helpId === on.dataset.helpSec; a.classList.toggle('on', isOn); if (isOn) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
+    document.documentElement.scrollTop = 0;
 }
-function markHelpOn(id) {
-    document.querySelectorAll('.help-toc a').forEach((a) => a.classList.toggle('on', a.dataset.helpId === id));
+// Opens the Help tab on one page (a link in ModPacer that points into Help goes here).
+function openHelpPage(id) {
+    helpWantedPage = id;
+    const tab = document.querySelector('.tab[data-tab="help"]');
+    if (tab) tab.click();
 }
-// The contents entry for the section in view is marked: the last section whose top has passed the top of the window.
-function markHelpInView() {
-    const secs = [...document.querySelectorAll('.help-sec')];
-    if (secs.length === 0 || $('help').style.display === 'none') return;
-    let on = secs[0];
-    for (const s of secs) if (s.getBoundingClientRect().top <= 90) on = s;
-    markHelpOn(on.dataset.helpSec);
+window.openHelpPage = openHelpPage;
+function helpPageFromHash() {
+    const m = /^#help\/([a-z0-9-]+)$/i.exec(window.location.hash || '');
+    return m ? m[1].toLowerCase() : null;
 }
-window.addEventListener('scroll', markHelpInView, { passive: true });
-function helpGoto(id) {
-    const sec = document.getElementById(`help-${id}`);
-    if (!sec) return;
-    setHelpOpen(sec, true);
-    sec.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: 'start' });
-    markHelpOn(id);
-}
+window.addEventListener('hashchange', () => { const id = helpPageFromHash(); if (id) openHelpPage(id); });
+if (helpPageFromHash()) openHelpPage(helpPageFromHash()); // the address form: opened straight on that page
 document.addEventListener('click', (e) => {
-    const el = e.target.closest ? e.target.closest('[data-action="help-goto"], [data-action="help-toggle"]') : null;
+    const el = e.target.closest ? e.target.closest('[data-action="help-goto"]') : null;
     if (!el) return;
     e.preventDefault();
-    if (el.dataset.action === 'help-goto') helpGoto(el.dataset.helpId);
-    else { const sec = el.closest('.help-sec'); setHelpOpen(sec, !sec.classList.contains('open')); }
-});
-document.addEventListener('keydown', (e) => {
-    if (e.key !== 'Enter' && e.key !== ' ') return;
-    const el = e.target && e.target.closest && e.target.closest('[data-action="help-toggle"]');
-    if (el && e.target === el) { e.preventDefault(); el.click(); }
+    showHelpPage(el.dataset.helpId);
 });
 
 // --- Plugins tab ---
@@ -246,7 +254,7 @@ function countsLine(row) {
 function releaseIcon(row) {
     if (!webUrl(row.externalUrl)) return '';
     // On a row whose Hub link is out of date the icon is the way to the download, and its hover says so.
-    const label = row.linkOutOfDate ? linkOutOfDateWords(row).hover : 'Mod page';
+    const label = row.linkOutOfDate ? linkOutOfDateWords(row).hover : (row.isApplication ? 'Release page' : 'Mod page');
     return `<a href="${escapeHtml(webUrl(row.externalUrl))}"${visitAttr(row)} target="_blank" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}" role="img">&#8599;</a>`;
 }
 // The words for a row whose Hub link points at an older release than the version the Hub lists (final wording by Gemini,
@@ -320,8 +328,58 @@ function rowIconsHtml(row) {
 function installedAsLine(row) {
     return row && row.installedAs ? `<div class="muted">Installed as ${escapeHtml(row.installedAs)}</div>` : '';
 }
+// ---- ModPacer 2.0, part 1: a mod the person added with the + button (row.tracked). Its three honest states: read (an ordinary row), "Version needs confirmation" and "Can't read
+// the page" (a warning line, an Open page button and, for the first, I checked it; never an Update button). A short second line says when GitHub could not be read just now.
+const capitalWord = (t) => String(t).charAt(0).toUpperCase() + String(t).slice(1);
+// The small word after the author: "from GitHub" for one source; for several, which one the row follows (and the pin), with what the others have: "Following the folder (newest) · GitHub has 1.4.0".
+function trackedMeta(row) {
+    const t = row.tracked;
+    if (!t) return null;
+    if (!t.follow) return 'from ' + escapeHtml(t.from);
+    const others = (t.others || []).map((o) => `${escapeHtml(capitalWord(o.label))} has ${escapeHtml(o.version)}`);
+    return [escapeHtml(t.follow)].concat(others).join(' &middot; ');
+}
+// An application (a program that is only tracked): calm, never the mod Download behaviour. A new version: Download (asks where to save) when the release carries an installer or
+// an archive that works here, else Open release page; and "I've updated it". A followed folder: Open folder.
+function appAction(row) {
+    const t = row.tracked, id = escapeHtml(row.id);
+    // "I've updated it" lives in the "..." menu; it is a button on the row only when the row has no other button (then it is the one way forward).
+    const updated = (main) => main ? '' : `<button data-action="app-updated" data-id="${id}">I've updated it</button>`;
+    const page = webUrl(row.externalUrl) ? `<button data-action="open-link" data-url="${escapeHtml(webUrl(row.externalUrl))}">Open release page</button>` : '';
+    if (row.status === 'downloaded') { const b = row.appSaved ? `<button data-action="tracked-open-saved" data-id="${id}">Open folder</button>` : ''; return statHtml('ok', 'Downloaded') + b + updated(b); }
+    if (row.status === 'update_available') {
+        if (t.kind === 'folder') return `<button data-action="tracked-open-folder" data-id="${id}" data-source="${escapeHtml(t.sourceId || '')}">Open folder</button>`;
+        if ((t.appFiles || []).length > 0) return `<button class="primary" data-action="app-download" data-id="${id}">Download</button>`;
+        return `${page}${updated(page)}`;
+    }
+    return statHtml('ok', 'Up to date');
+}
+const APP_NONE_LINE = 'This release has no installer or archive. Open the release page to get it.';
+function trackedHeld(row) { return !!(row.tracked && (row.tracked.state === 'confirm' || row.tracked.state === 'cannot' || row.tracked.state === 'ask')); }
+function trackedHeldAction(row) {
+    const t = row.tracked, id = escapeHtml(row.id);
+    if (t.state === 'ask') { // two places that cannot be compared: one button for each, asked once and remembered
+        return statHtml('warn', escapeHtml(t.word || '')) + (t.ask ? t.ask.sources : []).map((s) => `<button data-action="tracked-choose-source" data-id="${id}" data-source="${escapeHtml(s.id)}">Follow ${escapeHtml(s.label)}</button>`).join('');
+    }
+    const open = t.kind === 'folder'
+        ? `<button data-action="tracked-open-folder" data-id="${id}" data-source="${escapeHtml(t.sourceId || '')}">Open folder</button>` // a followed folder: the file manager, never a web page
+        : (webUrl(t.openUrl) ? `<button data-action="open-link" data-url="${escapeHtml(webUrl(t.openUrl))}">Open page</button>` : '');
+    // "Accept this version" lives in the "..." menu; it is a button here only when there is no page to open (then it is the one way forward).
+    const checked = t.state === 'confirm' && !open ? `<button class="btn-muted" data-action="tracked-checked" data-id="${id}">Accept this version</button>` : '';
+    return statHtml('warn', escapeHtml(t.word || '')) + open + checked;
+}
+function trackedLine(row) {
+    const t = row.tracked;
+    if (!t) return '';
+    const lines = [];
+    if (t.line) lines.push(t.line);
+    if (t.temp) lines.push(t.temp);
+    for (const n of (t.notes || [])) lines.push(n); // a place that was left out, and why
+    const dates = t.also && t.also.dates && t.also.dates.length ? `<div class="muted">${escapeHtml(t.also.dates.slice(0, 3).join(' \u00b7 '))}</div>` : ''; // a LoversLab page's own dates: extra text, never what decides an update
+    return lines.map((l) => `<div class="req-warn">&#9888;&#65039; ${escapeHtml(l)}</div>`).join('') + dates;
+}
 function rowMoreButton(row) {
-    if (!row.inExcluded && (row.unverifiedExcluded || row.skipping || row.dummyMaster)) return ''; // a row in the Excluded section has its own menu (Include again)
+    if (!row.inExcluded && (row.unverifiedExcluded || row.dummyMaster)) return ''; // a row in the Excluded section has its own menu (Include again); a skipped row's menu holds Stop skipping
     return `<button type="button" class="row-more" data-action="row-menu" data-id="${escapeHtml(row.id)}" title="Mod options" aria-label="Mod options" aria-haspopup="menu" aria-expanded="false">&#8943;</button>`;
 }
 let rowMenuEl = null, rowMenuBtn = null;
@@ -329,6 +387,29 @@ function closeRowMenu(refocus) {
     if (rowMenuBtn) { rowMenuBtn.setAttribute('aria-expanded', 'false'); rowMenuBtn.classList.remove('open'); if (refocus) rowMenuBtn.focus(); }
     if (rowMenuEl) rowMenuEl.remove();
     rowMenuEl = null; rowMenuBtn = null;
+}
+// The secondary actions that used to sit on a row as small buttons or text links (2026-11-22): each is a menu item with its old label, in front of the older items.
+// A row keeps one of them as a button only when it is the row's one way forward (see appAction, trackedHeldAction, renderRow, notInstalledAction).
+function rowMoreItems(row, item) {
+    let html = '';
+    const plain = !row.tracked && !trackedHeld(row) && !row.isApplication && !row.vortexWaiting && !row.oldCopyLeft && !row.skipping;
+    if (row.skipping) return item('stop-skipping', 'Stop skipping', '');
+    if (row.isProgram && !row.isApplication && !row.tracked) {
+        if (row.notInstalled) { if (!row.unverifiedExcluded && !row.dummyMaster && !trackedHeld(row) && programButton(row)) html += item('have-open', 'I have this', ''); }
+        else if (row.iHaveThis) {
+            if ((row.status === 'update_available' || row.status === 'needs_you') && programButton(row)) html += item('have-updated', 'I updated it', '');
+            html += item('have-undo', "I don't have this", '');
+        }
+    }
+    if (plain && !row.isProgram && !row.notInstalled) {
+        if (row.status === 'unknown_version' && row.installedVersionUnknown && row.vortexModId && row.latestVersion && !row.vortexInfoFromCache) {
+            const it = item('set-known-version', `It's ${escapeHtml(row.latestVersion)}`, '');
+            html += batchRunning ? it.replace('<button ', '<button disabled ') : it;
+        }
+        if (row.status === 'up_to_date' && row.versionSetByPlayer && row.vortexModId && !row.vortexInfoFromCache) html += item('update-anyway', 'Update anyway', '');
+    }
+    if (row.hasSavedChoice && !row.releaseChoice && !row.isProgram && row.status !== 'updated' && row.status !== 'deployed' && !updateWorkHtml(row)) html += item('forget-file-choice', 'Change file', '');
+    return html;
 }
 function openRowMenu(btn) {
     const same = rowMenuBtn === btn;
@@ -342,16 +423,37 @@ function openRowMenu(btn) {
     const item = (action, title, small) => `<button type="button" role="menuitem" class="row-menu-item" data-action="${action}" data-id="${escapeHtml(row.id)}">${title}${small ? `<small>${small}</small>` : ''}</button>`;
     const menu = document.createElement('div');
     menu.className = 'row-menu'; menu.setAttribute('role', 'menu');
-    menu.innerHTML = inExcluded ? item('menu-include', 'Include again', '') : ((canSkip ? item('menu-skip', 'Skip this update', `Pass on ${escapeHtml(version)}. We'll still check for future updates.`) : '') + item('menu-exclude', 'Exclude this mod', 'Never check or update it.'));
+    if (row.tracked) { // a mod added with the + button: its own three actions (the Hub's Skip and Exclude do not apply)
+        const srcs = row.tracked.sources || [];
+        const forSource = (action, title, small, sid) => item(action, title, small).replace('<button ', `<button data-source="${escapeHtml(sid)}" `);
+        const multi = srcs.length > 1;
+        let html = '';
+        if (multi) { // which place to follow: pin one (exactly that one, never a quiet switch to another), or go back to the newest
+            for (const s of srcs) if (!s.pinned) html += forSource('menu-use-source', `Use ${escapeHtml(s.label)}`, 'Follow only this place.', s.id);
+            if (srcs.some((s) => s.pinned)) html += item('menu-unpin', 'Unpin', 'Go back to following the newest.');
+        }
+        const hasGithub = srcs.length ? srcs.some((s) => s.type === 'github') : row.tracked.kind !== 'folder' && row.tracked.kind !== 'loverslab';
+        const hasPage = srcs.some((s) => s.type === 'loverslab');
+        const hasFolder = srcs.length ? srcs.some((s) => s.type === 'folder') : row.tracked.kind === 'folder';
+        if (hasGithub || hasPage) html += item('menu-update-link', 'Update the link', hasPage && !hasGithub ? 'Choose a different LoversLab page.' : 'Choose a different GitHub page.');
+        if (hasFolder) html += item('menu-choose-folder', 'Choose another folder', 'Look in a different folder for the same builds.');
+        if (srcs.length < 2) html += item('menu-add-source', 'Add another source', 'Another place to look for the same mod.');
+        if (multi) for (const s of srcs) html += forSource('menu-remove-source', `Remove ${escapeHtml(s.label)}`, 'Stop looking there. The other place stays.', s.id);
+        const checkedItem = row.tracked.state === 'confirm' ? item('menu-i-checked', 'Accept this version', 'You have looked at it yourself.') : item('menu-i-checked', 'Update version', "I've updated to the new version.");
+        const appItems = row.tracked.app ? item('menu-app-updated', "I've updated it", 'You installed the new version yourself.') + (row.tracked.state === 'confirm' ? checkedItem : '') : checkedItem;
+        menu.innerHTML = rowMoreItems(row, item) + html + appItems + item('menu-stop-tracking', 'Stop tracking', 'ModPacer stops following it. Nothing is removed from your mods.');
+    } else if (row.skipping && !inExcluded) menu.innerHTML = rowMoreItems(row, item);
+    else menu.innerHTML = inExcluded ?item('menu-include', 'Include again', '') : (rowMoreItems(row, item) + (canSkip ?item('menu-skip', 'Skip this update', `Pass on ${escapeHtml(version)}. We'll still check for future updates.`) : '') + item('menu-exclude', 'Exclude this mod', 'Never check or update it.'));
     document.body.appendChild(menu);
     const r = btn.getBoundingClientRect();
     menu.style.top = `${Math.round(r.bottom + 4)}px`;
     menu.style.left = `${Math.max(8, Math.round(r.right - menu.offsetWidth))}px`;
     btn.setAttribute('aria-expanded', 'true'); btn.classList.add('open');
     rowMenuEl = menu; rowMenuBtn = btn;
-    const items = [...menu.querySelectorAll('.row-menu-item')];
-    items[0].focus();
+    const items = [...menu.querySelectorAll('.row-menu-item')].filter((b) => !b.disabled);
+    if (items.length) items[0].focus();
     menu.addEventListener('keydown', (e) => {
+        if (!items.length) return;
         const i = items.indexOf(document.activeElement);
         if (e.key === 'ArrowDown') { e.preventDefault(); items[(i + 1) % items.length].focus(); }
         else if (e.key === 'ArrowUp') { e.preventDefault(); items[(i - 1 + items.length) % items.length].focus(); }
@@ -396,7 +498,7 @@ function renderRow(row) {
     // Author only -- the release link moved into the top-right icon (queue:
     // plugin-rows-revision-3-dates-icons-legend, 2026-10-01; previously joined with releaseLink()
     // here, repeating "GitHub release ↗" as plain text on every single row).
-    const metaBits = [row.author ? escapeHtml(row.author) : null].filter(Boolean);
+    const metaBits = [row.author ? escapeHtml(row.author) : null, trackedMeta(row)].filter(Boolean);
     // Only show the old-→-new arrow when the versions actually differ -- an up-to-date row
     // has installedVersion === latestVersion, and showing "0.11.1→0.11.1" (real bug, live) is
     // never useful. Anything actually newer (update_available/downloading/downloaded/updated)
@@ -439,13 +541,21 @@ function renderRow(row) {
     const inProgress = rowState.inProgressView(row);
     // A row whose update is running (or waiting its turn in Update all) shows that, never the plain Update button.
     const updateWork = row.status === 'downloaded' ? updateWorkHtml(row) : '';
-    if (row.status === 'disabled') {
+    if (trackedHeld(row)) {
+        action = trackedHeldAction(row); // ModPacer 2.0: "Version needs confirmation" or "Can't read the page": never an Update button
+    } else if (row.status === 'disabled') {
         // Switched off in the mod manager (the "Ignore disabled mods" switch): nothing to do for it and nothing to say; the Disabled section already says it.
     } else if (inProgress) {
         // queued -> "Waiting to download..." with no bar; downloading -> real bytes, and a bar only when
         // the real size is known (rules live in row-state.js).
         action = statHtml('info', escapeHtml(inProgress.label))
             + (inProgress.bar != null ? `<div class="bar"><i style="width:${inProgress.bar}%"></i></div>` : '');
+    } else if (row.noDownload && row.status === 'update_available') {
+        // a LoversLab page: the download needs the person signed in and clicking the site's own button, so the only action is to open the page
+        action = webUrl(row.externalUrl) ? `<button class="primary" data-action="open-link" data-url="${escapeHtml(webUrl(row.externalUrl))}">Open page</button>` : '';
+    } else if (row.isApplication) {
+        action = appAction(row);
+        if (row.status === 'update_available' && row.tracked.appNone && row.tracked.kind !== 'folder') changesHtml += `<div class="muted">${escapeHtml(APP_NONE_LINE)}</div>`;
     } else if (row.oldCopyLeft) {
         // The new version is in, but the old copy (its Vortex record, its archive, its staging folder) is not fully gone: never a tick. The error line under
         // the row says what is left; Try again removes it again through the Vortex Bridge and looks.
@@ -502,7 +612,7 @@ function renderRow(row) {
     } else if (row.skipping) {
         // "Skip this update": up to date for now, saying which version is being passed on, with the way back.
         action = statHtml('off', `Skipping ${escapeHtml(row.skipping.version)}`);
-        changesHtml += `<div class="muted">Skipping ${escapeHtml(row.skipping.version)}. <a href="#" class="ch-toggle" data-action="stop-skipping" data-id="${escapeHtml(row.id)}">Stop skipping</a></div>`;
+        changesHtml += `<div class="muted">Skipping ${escapeHtml(row.skipping.version)}.</div>`; // the way back, "Stop skipping", is in the "..." menu
     } else if ((row.status === 'up_to_date' || row.status === 'unknown_version') && row.vortexWaiting) {
         // Vortex was still busy when this was checked: no "Up to date" until Vortex has really answered (checked again by itself).
         action = `<div class="muted" style="font-size:0.75rem;text-align:right">Waiting for Vortex…</div>`;
@@ -513,11 +623,10 @@ function renderRow(row) {
         const off = batchRunning ? ' disabled' : '';
         action = `<div class="muted" style="font-size:0.75rem;text-align:right">Installed, but Vortex doesn't know its version</div>`
             + (row.vortexModId && row.latestVersion && !row.vortexInfoFromCache
-                ? `<button class="primary" data-action="update-anyway" data-id="${escapeHtml(row.id)}"${off}>Update</button>`
-                + `<button class="btn-muted" data-action="set-known-version" data-id="${escapeHtml(row.id)}"${off}>It's ${escapeHtml(row.latestVersion)}</button>` : '');
+                ? `<button class="primary" data-action="update-anyway" data-id="${escapeHtml(row.id)}"${off}>Update</button>` : ''); // "It's <version>" is in the "..." menu
     } else if (row.status === 'up_to_date' && row.versionSetByPlayer && row.vortexModId && !row.vortexInfoFromCache) {
-        // The version was typed in by "It's <version>": a way back if that was the wrong button.
-        action = `${statHtml('ok', 'Up to date')}<a href="#" class="ch-toggle" data-action="update-anyway" data-id="${escapeHtml(row.id)}">Update anyway</a>`;
+        // The version was typed in by "It's <version>": the way back, "Update anyway", is in the "..." menu.
+        action = statHtml('ok', 'Up to date');
     } else if (row.status === 'up_to_date' || row.status === 'unknown_version') {
         action = row.status === 'unknown_version' ? statHtml('warn', "Can't check version") : statHtml('ok', 'Up to date');
     } else if (row.status === 'not_on_hub') {
@@ -526,12 +635,12 @@ function renderRow(row) {
         // It was on the Hub and is not any more (two good reads in a row): a grey dot, no button; nothing about the mod itself is wrong.
         action = statHtml('off', 'No longer on the Plugin Hub', ` title="${escapeHtml(LEFT_HUB_HOVER)}"`);
     }
-    if (row.isProgram) { // never Download, Update or Install: only the download page (the status and versions above stay true)
-        if (row.status === 'update_available' || row.status === 'needs_you') action = programButton(row) + (row.iHaveThis ? `<button class="btn-muted" data-action="have-updated" data-id="${escapeHtml(row.id)}">I updated it</button>${haveUndoLink(row)}` : '');
-        else if (row.iHaveThis) action += haveUndoLink(row);
+    if (row.isProgram && !row.isApplication) { // never Download, Update or Install: only the download page (the status and versions above stay true)
+        // "I updated it" and "I don't have this" are in the "..." menu; "I updated it" is a button here only when the row has no download page button (then it is the one way forward).
+        if (row.status === 'update_available' || row.status === 'needs_you') { const b = programButton(row); action = b + (row.iHaveThis && !b ? `<button data-action="have-updated" data-id="${escapeHtml(row.id)}">I updated it</button>` : ''); }
         changesHtml += row.haveLine ? `<div class="prog-note">${escapeHtml(row.haveLine)}</div>` : programNote(row);
     }
-    if (row.hasSavedChoice && !row.releaseChoice && !row.isProgram && row.status !== 'updated' && row.status !== 'deployed' && !updateWorkHtml(row)) action += `<a href="#" class="ch-toggle" data-action="forget-file-choice" data-id="${escapeHtml(row.id)}">Change file</a>`;
+    // "Change file" is in the "..." menu.
     changesHtml += extrasHtml(row);
     const right = `<div class="right">${rowIconsHtml(row)}${action}${githubCurrentHtml(row)}${nexusCurrentHtml(row)}</div>`;
 
@@ -556,6 +665,7 @@ function renderRow(row) {
     // Installed, but SkyrimNet's registry does not list it yet (its files are in an enabled mod, or a folder named for it): the one warning line.
     if (row.notRegisteredYet) changesHtml += `<div class="req-warn">&#9888;&#65039; ${escapeHtml(row.notRegisteredYet)}</div>`;
     changesHtml += dummyAskLine(row);
+    changesHtml += trackedLine(row);
     return `<div class="row${modCovers.rowClass()}" data-row-id="${escapeHtml(row.id)}">
         <div><div class="name">${escapeHtml(row.title)}${nsfwPill(row)}</div><div class="meta">${metaBits.join(' &middot; ') || '&nbsp;'}</div>${installedAsLine(row)}${countsLine(row)}${modCovers.descSlot(row)}</div>
         <div><div class="ver"${verTitle}>${verHtml}</div>${dateHtml}</div>
@@ -755,7 +865,12 @@ function startupCheckComplete(state, rows) {
 // without the Bridge), a banner that already explains the wait (Bridge not answering, Vortex on another game), a setup or check error. Gone by itself, no "done" message.
 const GATHER_LINE_VORTEX = 'Still looking through Vortex. These numbers might shift.';
 const GATHER_LINE_PLAIN = 'Still looking through your mods. These numbers might shift.';
+const GATHER_LINE_TRACKED = 'Looking at the places you follow…'; // ModPacer 2.0: the mods added with the + button are being read in the background
 function gatherLineText(state, rows, firstCheckPending) {
+    const base = gatherLineBase(state, rows, firstCheckPending);
+    return base || (state && !state.error && !state.needsSetup && state.trackedReading ? GATHER_LINE_TRACKED : '');
+}
+function gatherLineBase(state, rows, firstCheckPending) {
     if (!state || state.error || state.needsSetup) return '';
     if (state.modManager !== 'vortex') return '';
     if (state.helperInstalled === false || ['vortex_not_running', 'helper_not_installed', 'vortex_running_helper_unreachable', 'vortex_other_game'].includes(state.vortexHelperState)) return '';
@@ -920,7 +1035,7 @@ let installingIds = new Set(); // Install pressed (or Install all running): show
 let installAllBusy = false;
 let installSkipNote = []; // [{ title, why }] the last Install all skipped (a note at the top of the section until the next check)
 // Whether the updater can fetch this listing by itself: a GitHub link, or a Nexus link with a Nexus key set.
-function hasDownload(row) { return !row.isProgram && (row.urlKind === 'github' || (row.urlKind === 'nexus' && nexusKeySet)); } // a program is never fetched
+function hasDownload(row) { return !row.isProgram && (row.urlKind === 'github' || row.urlKind === 'folder' || (row.urlKind === 'nexus' && nexusKeySet)); } // a program is never fetched
 // A listed program (lib/program-listings.json): its one button opens the listing's download page; nothing is downloaded or installed.
 function programButton(row) {
     const url = /^https:\/\//i.test(webUrl(row.externalUrl)) ? webUrl(row.externalUrl) : ''; // only an https address
@@ -929,7 +1044,6 @@ function programButton(row) {
 // "I have this" (queue: programs-like-multiproxy-can-be-marked-i-have-this-so-modpacer-watches-them-for-updates): a program is not in Vortex, so the person says
 // they have it and which version; ModPacer then watches it for updates. The question sits inside the row; nothing is saved until Save or The latest.
 const haveAsking = new Map(); // program id -> what has been typed so far
-function haveUndoLink(row) { return `<a href="#" class="ch-toggle" data-action="have-undo" data-id="${escapeHtml(row.id)}">I don't have this</a>`; }
 function haveQuestion(row) {
     if (!row.isProgram || !haveAsking.has(row.id)) return '';
     const id = escapeHtml(row.id);
@@ -1012,7 +1126,8 @@ function requiresLine(row) {
 }
 function notInstalledAction(row) {
     if (row.unverifiedExcluded) return ''; // excluded although installed: nothing to download or install
-    if (row.isProgram) return programButton(row) + `<button class="btn-muted" data-action="have-open" data-id="${escapeHtml(row.id)}">I have this</button>`;
+    if (trackedHeld(row)) return trackedHeldAction(row); // needs confirmation / can't read: only the page, never Install
+    if (row.isProgram) { const b = programButton(row); return b || `<button class="btn-muted" data-action="have-open" data-id="${escapeHtml(row.id)}">I have this</button>`; } // "I have this" is in the "..." menu; a button only when there is no download page button
     if (row.notRegisteredYet) return ''; // its files are already there; nothing to download, the line under the name says what to do
     const mo2 = currentManager === 'mo2';
     const idAttr = `data-id="${escapeHtml(row.id)}"`;
@@ -1039,7 +1154,7 @@ function notInstalledAction(row) {
         : `<button class="primary" data-action="install-new" ${idAttr}${off ? ' disabled' : ''}${title}>Install</button>`;
 }
 function renderNotInstalledRow(row) {
-    const metaBits = [row.author ? escapeHtml(row.author) : null].filter(Boolean);
+    const metaBits = [row.author ? escapeHtml(row.author) : null, trackedMeta(row)].filter(Boolean);
     const err = row.error ? `<div class="changes" style="color:var(${row.errorWarn ? '--status-warning' : '--status-error'})">${escapeHtml(row.error)}</div>` : '';
     const tag = row.tagline ? `<div class="tagline">${escapeHtml(row.tagline)}</div>` : '';
     const req = requiresLine(row);
@@ -1048,7 +1163,8 @@ function renderNotInstalledRow(row) {
     const desc = modCovers.descSlot(row);
     const prog = programNote(row);
     const have = haveQuestion(row);
-    const more = (tag || desc || req || same || reg || prog || have) ? `<div class="ni-more">${tag}${desc}${prog}${reg}${req}${same}${have}</div>` : '';
+    const trk = trackedLine(row);
+    const more = (tag || desc || req || same || reg || prog || have || trk) ? `<div class="ni-more">${tag}${desc}${prog}${reg}${req}${same}${have}${trk}</div>` : '';
     const action = notInstalledAction(row);
     const newDate = row.isNew ? formatReleaseDate(row.firstPublished) : ''; // a New mod shows the day it was first published on the Hub
     const newStatus = row.isNew && !/class="st"/.test(action) ? statHtml('info', 'New') : ''; // the status word, unless the row is already showing its own (Downloading...)
@@ -1127,7 +1243,7 @@ function paintSkyrimNetFound() {
     const el = $('skyrimNetFolderInput');
     if (!el) return;
     const dir = lastRenderedState && lastRenderedState.skyrimNetDir;
-    el.placeholder = !el.value && dir ? `Found automatically: ${dir}` : '';
+    el.placeholder = !el.value && dir ? `Auto-detected: ${dir}` : '';
 }
 // ---- The sort choice above the list (queue: the-mod-list-can-be-sorted-by-name): Default order / Name A to Z / Name Z to A, kept in the settings.
 let modSort = 'list', sortLoaded = false;
@@ -1273,7 +1389,7 @@ function renderPlugins(state) {
     $('legendLine').innerHTML = legendHtml(allRows);
     $('gatherLine').textContent = gatherLineText(state, rows, autoCheckPending);
 
-    const pendingDownloadCount = rows.filter((r) => r.status === 'update_available' && !r.isProgram).length;
+    const pendingDownloadCount = rows.filter((r) => r.status === 'update_available' && !r.isProgram && !r.noDownload).length;
     const searching = searchTerms.length > 0 && allRows.length > 0;
     $('downloadAllBtn').style.display = pendingDownloadCount > 0 && !searching ? '' : 'none'; // the bulk buttons act on the whole list, so they step aside while a search is on
     $('downloadAllBtn').textContent = `Download all (${pendingDownloadCount})`;
@@ -1317,7 +1433,7 @@ function renderPlugins(state) {
     modCovers.afterPaint($('pluginList')); // fills the descriptions already known and starts watching what is on screen; nothing is asked for until a row is seen
 
     // Also keep looking while a row is waiting on a Vortex that is still starting, so it flips to Update by itself.
-    const stillWorking = batchRunning || singleUpdating || installingIds.size > 0 || Object.keys(liveProgress).length > 0 || allRows.some((r) => r.status === 'queued' || r.status === 'downloading') || rows.some((r) => r.vortexWaiting) || state.vortexRetrying || state.vortexHelperState === 'vortex_running_helper_unreachable' || state.checking || rows.some((r) => r.status === 'queued' || r.status === 'downloading' || (r.status === 'downloaded' && !r.updatePreview && /^Waiting for Vortex/.test(r.updateUnavailableReason || '')));
+    const stillWorking = batchRunning || singleUpdating || installingIds.size > 0 || state.trackedReading || Object.keys(liveProgress).length > 0 || allRows.some((r) => r.status === 'queued' || r.status === 'downloading') || rows.some((r) => r.vortexWaiting) || state.vortexRetrying || state.vortexHelperState === 'vortex_running_helper_unreachable' || state.checking || rows.some((r) => r.status === 'queued' || r.status === 'downloading' || (r.status === 'downloaded' && !r.updatePreview && /^Waiting for Vortex/.test(r.updateUnavailableReason || '')));
     if (stillWorking && !pollTimer) pollTimer = setInterval(pollTick, 1000);
     if (!stillWorking && pollTimer) { clearInterval(pollTimer); pollTimer = null; }
 }
@@ -1371,7 +1487,7 @@ $('checkNowBtn').addEventListener('click', async () => {
 $('downloadAllBtn').addEventListener('click', async () => {
     dropLeftover();
     const state = await api('GET', '/api/state');
-    const pending = (state.rows || []).filter((r) => r.status === 'update_available' && !r.notInstalled && !r.isProgram); // the not-installed listings have their own Install
+    const pending = (state.rows || []).filter((r) => r.status === 'update_available' && !r.notInstalled && !r.isProgram && !r.noDownload); // the not-installed listings have their own Install
     await Promise.all(pending.map((r) => api('POST', `/api/plugins/${encodeURIComponent(r.id)}/download`, { how: 'download-all' })));
     refreshState();
 });
@@ -1411,6 +1527,7 @@ document.addEventListener('click', async (e) => {
     const el = e.target.closest('[data-action]');
     if (!el) return;
     const action = el.dataset.action;
+    if (action !== 'row-menu' && el.closest('.row-menu')) closeRowMenu(false); // choosing any menu item closes the menu
     if (action === 'download') {
         e.preventDefault();
         dropLeftover();
@@ -1501,6 +1618,41 @@ document.addEventListener('click', async (e) => {
         const id = el.dataset.id;
         closeRowMenu(false);
         if (action === 'menu-skip') await skipUpdateClick(id); else await excludeOrInclude(action === 'menu-include' ? 'include' : 'exclude', id);
+    } else if (action === 'app-download') {
+        e.preventDefault();
+        const row = ((lastRenderedState && lastRenderedState.rows) || []).find((r) => r.id === el.dataset.id);
+        if (row) window.addModUi.appDownload(row);
+    } else if (action === 'app-updated' || action === 'menu-app-updated') {
+        e.preventDefault();
+        closeRowMenu(false);
+        await window.addModUi.appUpdated(el.dataset.id);
+    } else if (action === 'tracked-open-saved') {
+        e.preventDefault();
+        await window.addModUi.openSaved(el.dataset.id);
+    } else if (action === 'tracked-open-folder') {
+        e.preventDefault();
+        await window.addModUi.openFolder(el.dataset.id, el.dataset.source);
+    } else if (action === 'tracked-choose-source') {
+        e.preventDefault();
+        await window.addModUi.chooseSource(el.dataset.id, el.dataset.source);
+    } else if (action === 'menu-use-source' || action === 'menu-unpin' || action === 'menu-remove-source' || action === 'menu-add-source') {
+        e.preventDefault();
+        const id = el.dataset.id, sid = el.dataset.source;
+        closeRowMenu(false);
+        const row = ((lastRenderedState && lastRenderedState.rows) || []).find((r) => r.id === id);
+        if (action === 'menu-use-source') await window.addModUi.pin(id, sid);
+        else if (action === 'menu-unpin') await window.addModUi.pin(id, null);
+        else if (action === 'menu-remove-source') await window.addModUi.removeSource(id, sid);
+        else if (row) window.addModUi.addSource(row);
+    } else if (action === 'menu-stop-tracking' || action === 'menu-update-link' || action === 'menu-choose-folder' || action === 'menu-i-checked' || action === 'tracked-checked') {
+        e.preventDefault();
+        const id = el.dataset.id;
+        closeRowMenu(false);
+        const row = ((lastRenderedState && lastRenderedState.rows) || []).find((r) => r.id === id);
+        if (action === 'menu-stop-tracking') await window.addModUi.stopTracking(id);
+        else if (row && action === 'menu-update-link') window.addModUi.updateLink(row);
+        else if (row && action === 'menu-choose-folder') await window.addModUi.chooseAnotherFolder(row);
+        else if (row) await window.addModUi.iChecked(row);
     } else if (action === 'stop-skipping') {
         e.preventDefault();
         await excludeOrInclude('include', el.dataset.id);
@@ -2349,11 +2501,10 @@ function renderNexusKeyField(last4) {
     }
     if (last4 && !nexusKeyEditing) {
         field.innerHTML = `
-            <div class="inline"><input type="text" value="Saved (ends &hellip;${escapeHtml(last4)})" readonly>
-                <button id="nexusKeyCheckBtn">Check</button>
+            <div class="set-row"><div class="set-main"><div id="nexusKeyStatus"></div><div class="muted" id="nexusKeySaved">Key: Saved (ends &hellip;${escapeHtml(last4)})</div></div>
+                <div class="set-btns"><button id="nexusKeyCheckBtn">Check</button>
                 <button id="nexusKeyChangeBtn">Change</button>
-                <button id="nexusKeyRemoveBtn">Remove</button></div>
-            <div id="nexusKeyStatus"></div>
+                <button id="nexusKeyRemoveBtn">Remove</button></div></div>
         `;
         $('nexusKeyCheckBtn').addEventListener('click', () => runNexusKeyCheck(''));
         $('nexusKeyChangeBtn').addEventListener('click', () => { nexusKeyEditing = true; nexusKeyState = null; renderNexusKeyField(last4); });
@@ -2531,22 +2682,23 @@ function applyModManagerSettings(cfg) {
 // The Bridge line at the top of Settings (Vortex only): installed, or not (with the way to get the bundled .zip).
 let lastSettingsCfg = null;
 function renderHelperSettingsLine(cfg) {
-    const el = $('helperStatus');
+    const el = $('helperStatus'); // the green pill (header, right); a problem or an action takes the whole line under the header instead
+    el.className = '';
     const vortexOnly = (cfg.modManager === 'mo2' ? 'mo2' : 'vortex') === 'vortex';
     if (!vortexOnly || cfg.helperInstalled === null || cfg.helperInstalled === undefined) { el.innerHTML = ''; return; }
     if (cfg.helperInstalled && cfg.bridge && cfg.bridge.outdated && cfg.helperBundled) {
         const parts = bundledHelperParts(true, null); // installed, but older than ModPacer needs: the same words as the banner
-        el.innerHTML = `<span class="muted">&#9888;&#65039; ${escapeHtml(parts.title)}</span>${parts.body ? `<div style="margin-top:8px">${parts.body}</div>` : ''}${parts.actions ? `<div class="callout__actions">${parts.actions}</div>` : ''}`;
+        el.className = 'set-wide'; el.innerHTML = `<span class="muted">&#9888;&#65039; ${escapeHtml(parts.title)}</span>${parts.body ? `<div style="margin-top:8px">${parts.body}</div>` : ''}${parts.actions ? `<div class="callout__actions">${parts.actions}</div>` : ''}`;
     } else if (cfg.helperInstalled) {
         const b = cfg.bridge || null;
         const ver = b && b.version ? ` ${escapeHtml(b.version)}` : '';
-        el.innerHTML = `<span class="ok-t">&#10003; Vortex Bridge${ver} is installed</span>`
-            + (b && b.answering && b.newerBundled && cfg.helperBundled ? `<div class="muted" style="margin-top:6px">${escapeHtml(window.setupFlow.bridgeNewerText(b.version, b.bundledVersion))}</div><div class="callout__actions"><button class="primary" data-action="open-helper-zip">Get the Vortex Bridge</button></div>` : '');
+        el.innerHTML = `<span class="set-pill">&#10003; Vortex Bridge${ver} is installed</span>`;
+        if (b && b.answering && b.newerBundled && cfg.helperBundled) { el.className = 'set-wide'; el.innerHTML += `<div class="muted">${escapeHtml(window.setupFlow.bridgeNewerText(b.version, b.bundledVersion))}</div><div class="callout__actions"><button class="primary" data-action="open-helper-zip">Get the Vortex Bridge</button></div>`; }
     } else if (cfg.helperBundled) {
         const parts = bundledHelperParts();
-        el.innerHTML = `<span class="muted">&#9888;&#65039; ${escapeHtml(parts.title)}</span>${parts.body ? `<div style="margin-top:8px">${parts.body}</div>` : ''}${parts.actions ? `<div class="callout__actions">${parts.actions}</div>` : ''}`;
+        el.className = 'set-wide'; el.innerHTML = `<span class="muted">&#9888;&#65039; ${escapeHtml(parts.title)}</span>${parts.body ? `<div style="margin-top:8px">${parts.body}</div>` : ''}${parts.actions ? `<div class="callout__actions">${parts.actions}</div>` : ''}`;
     } else {
-        el.innerHTML = `<span class="muted">&#9888;&#65039; Vortex Bridge isn't installed. ModPacer works best with it: updates install directly into Vortex, stay in your collections, and check for updates when Vortex starts. <a href="${escapeHtml(cfg.helperDownloadUrl)}" target="_blank" rel="noopener noreferrer">Get the Vortex Bridge</a></span>`;
+        el.className = 'set-wide'; el.innerHTML = `<span class="muted">&#9888;&#65039; Vortex Bridge isn't installed. ModPacer works best with it: updates install directly into Vortex, stay in your collections, and check for updates when Vortex starts. <a href="${escapeHtml(cfg.helperDownloadUrl)}" target="_blank" rel="noopener noreferrer">Get the Vortex Bridge</a></span>`;
     }
 }
 

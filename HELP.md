@@ -29,6 +29,63 @@ Tiles with nothing to count are hidden. While ModPacer reads your mods, a short 
 
 **"Installed, but Vortex doesn't know its version":** This shows for hand-installed mods. ModPacer first checks the file name for a version (like `v0-3`) and offers an **Update** if yours is older. If the file name also has no version, you get a choice. Click **Update** to install the latest version, or **It's <version>** if you already have it. If you click that by mistake, **Update anyway** lets you fix it.
 
+## Adding a mod you follow yourself (beta)
+
+### Add a mod
+
+ModPacer follows the mods in the Plugin Hub for you. For a mod that isn't there, press the **+** button at the top of the Mods page. Add mod is beta: if something confuses you or breaks, please say so on the project's GitHub Issues page.
+
+1. Press **+** and choose **Where it lives**: **A project's releases page**, **A file page there**, or **A folder on this PC**.
+2. Paste the link or choose the folder, and give it a name (or leave it empty so ModPacer finds one).
+3. Type your current version (or leave it empty if it isn't installed), then confirm what ModPacer finds.
+4. If you use Vortex or Mod Organizer 2, ModPacer asks which mod in your manager this is.
+
+### What a followed mod can do
+
+The new row appears on the Mods page. Its menu lets you click **Update version** (to type the version you just installed), **Update the link**, **Add another source** (a second place to look for the same mod), pin the source you trust, and **Stop tracking** (ModPacer stops following it without removing your files).
+
+### GitHub
+
+- GitHub: The row shows the newest release and a **Download** button. A picture comes from the release or the project's front page.
+
+### A folder on this PC
+
+- **A folder on this PC**: ModPacer only reads the folder. Tell it the format using **How the files are named** (for example `{name} {version}.zip`); it previews the newest file before you save.
+
+### LoversLab
+
+- LoversLab: Needs the browser helper (next section). The row only opens the page: install the new version by hand, then press **Update version**.
+
+### When versions don't match
+
+If a page lists a lower version than yours, or ModPacer can't compare them, the row asks you to look. Press **Accept this version** to tell ModPacer the listed version is correct.
+
+## The browser helper (only for LoversLab)
+
+LoversLab pages sit behind your sign-in, so a small helper in your browser reads them for you.
+
+### Set it up
+
+1. In your browser, open the Extensions page: paste `edge://extensions` or `chrome://extensions` into the address bar (the pop-up has a copy button for each), and turn on **Developer mode**.
+2. In ModPacer, copy the helper folder location (the pop-up and **Settings** show it with a copy button).
+3. Press **Load unpacked**. In the window that opens, click the address bar at the top, paste the location you copied (Ctrl+V), press Enter, then press **Select Folder**.
+4. Click the helper's icon in your browser, paste the code from ModPacer once, press **Connect**, then press **Allow LoversLab** and say yes when the browser asks.
+5. Make sure you are signed in to LoversLab in this browser.
+6. Back in ModPacer, press **Check again**. The settings line shows when it connects.
+
+### Good to know
+
+- Anyone using the same browser profile can use the helper and your LoversLab sign-in. Use a profile you trust.
+- The helper reads only the pages you add and talks only to ModPacer on this PC.
+- It checks about every four hours per page, and a new LoversLab row can take up to half a minute the first time.
+- The pairing code works for 30 minutes; you can make a new one anytime or remove the helper's access.
+- If LoversLab asks you to sign in again, open it in your browser and sign in; ModPacer checks again by itself.
+
+### Updating the helper
+
+- When ModPacer says **Browser helper update available**, open the browser's Extensions page (`edge://extensions` or `chrome://extensions`), find **ModPacer browser helper**, and click the **Reload** icon (↻) on its card. It is on the Extensions page, not in the helper's own little window.
+- A manually loaded helper never updates itself; ModPacer tells you on the Mods page, in Add a mod and in **Settings** when an update is available.
+
 ## The "..." menu, skipping and excluding
 
 Every mod has a **...** button next to its two small icons. Click it to open a short menu:

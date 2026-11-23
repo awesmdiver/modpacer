@@ -272,6 +272,7 @@ Section "Install"
     RMDir /r "$INSTDIR\web"
     RMDir /r "$INSTDIR\tools"
     RMDir /r "$INSTDIR\helper"
+    RMDir /r "$INSTDIR\browser-helper" ; the browser helper folder (loaded into the browser by hand): replaced whole, so a file a newer one dropped does not linger
     File /r /x ".release-staging" "${MP_STAGE_DIR}\*"
 
     WriteUninstaller "$INSTDIR\Uninstall.exe"
@@ -357,6 +358,7 @@ Section "Uninstall"
     RMDir /r "$INSTDIR\web"
     RMDir /r "$INSTDIR\tools"
     RMDir /r "$INSTDIR\helper"
+    RMDir /r "$INSTDIR\browser-helper"
     Delete "$INSTDIR\${MP_EXE}"
     Delete "$INSTDIR\modpacer.ico"
     Delete "$INSTDIR\server.js"
@@ -386,6 +388,10 @@ Section "Uninstall"
             Delete "$INSTDIR\hub-seen.json"
             Delete "$INSTDIR\hub-absent.json"
             Delete "$INSTDIR\programs-have.json"
+            Delete "$INSTDIR\tracked-mods.json" ; the mods added with the + button (ModPacer 2.0)
+            Delete "$INSTDIR\tracked-mods.json.*" ; a save cut short, or a damaged copy set aside
+            Delete "$INSTDIR\browser-helper.json" ; the browser helper's pairing (the hash of its token, a waiting code)
+            Delete "$INSTDIR\browser-helper.json.*" ; a save cut short
             Delete "$INSTDIR\dummy-masters.json"
             Delete "$INSTDIR\nexus-current.json"
             Delete "$INSTDIR\tray-notice-shown" ; the tray program's "first start" flag (launcher: NoticeFlagName)

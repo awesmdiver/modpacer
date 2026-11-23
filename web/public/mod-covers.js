@@ -11,6 +11,7 @@
 // A plain script in the browser (sets window.modCovers), a module in Node (tests).
 (function (root) {
     const COVER_URL = '/api/hub-cover/';
+    const GH_COVER_URL = '/api/github-cover/';
     const DESC_URL = '/api/hub-description/';
     const RETRY_AFTER_MS = 5 * 60 * 1000;
     const MAX_LINES = 400;
@@ -36,14 +37,26 @@
     function pictureWanted(row) {
         return !!(row && idOk(row.hubId) && row.hasCover && (!row.coverAdult || cfg.adult));
     }
+    // A mod followed from GitHub has no Hub cover: its picture comes from ModPacer's own /api/github-cover/<tracked id> (the release page, else the README).
+    // A mod that has a Hub cover always keeps it. The frame's key is the Hub id, or "gh~<tracked id>" for a GitHub picture.
+    const GH_PREFIX = 'gh~';
+    const ghIdOk = (id) => /^tracked\.[a-z0-9._-]{1,70}$/.test(String(id || ''));
+    const keyOk = (key) => (String(key || '').startsWith(GH_PREFIX) ? ghIdOk(String(key).slice(GH_PREFIX.length)) : idOk(key));
+    const srcOf = (key) => (String(key).startsWith(GH_PREFIX) ? GH_COVER_URL + String(key).slice(GH_PREFIX.length) : COVER_URL + key);
+    function coverKey(row) {
+        if (pictureWanted(row)) return row.hubId;
+        if (row && row.ghCover && !row.hasCover && ghIdOk(row.id)) return GH_PREFIX + row.id;
+        return null;
+    }
 
     // ---- the picture frame -------------------------------------------------------------------------------------------------------
 
     function thumbHtml(row) {
         if (!cfg.show) return '';
-        if (!pictureWanted(row) || picFailed.has(row.hubId)) return '<div class="thumb empty"></div>';
-        const id = esc(row.hubId);
-        if (picLoaded.has(row.hubId)) return `<div class="thumb" data-cover-id="${id}" data-action="zoom-cover" role="button" tabindex="0"><img src="${COVER_URL}${id}" alt=""></div>`;
+        const key = coverKey(row);
+        if (!key || picFailed.has(key)) return '<div class="thumb empty"></div>';
+        const id = esc(key);
+        if (picLoaded.has(key)) return `<div class="thumb" data-cover-id="${id}" data-action="zoom-cover" role="button" tabindex="0"><img src="${esc(srcOf(key))}" alt=""></div>`;
         return `<div class="thumb load" data-cover-id="${id}"></div>`;
     }
     const rowClass = () => (cfg.show ? ' has-cover' : '');
@@ -59,7 +72,7 @@
             f.textContent = '';
             const img = root.document.createElement('img');
             img.alt = '';
-            img.src = COVER_URL + id;
+            img.src = srcOf(id);
             f.appendChild(img);
         }
     }
@@ -74,12 +87,12 @@
         }
     }
     function askPicture(id) {
-        if (!cfg.show || picLoaded.has(id) || picFailed.has(id) || picAsking.has(id) || !idOk(id)) return;
+        if (!cfg.show || picLoaded.has(id) || picFailed.has(id) || picAsking.has(id) || !keyOk(id)) return;
         picAsking.add(id);
         const probe = new root.Image();
         probe.onload = () => { picAsking.delete(id); picLoaded.add(id); paintLoaded(id); };
         probe.onerror = () => { picAsking.delete(id); picFailed.add(id); paintFailed(id); };
-        probe.src = COVER_URL + id;
+        probe.src = srcOf(id);
     }
 
     // ---- the description ---------------------------------------------------------------------------------------------------------
@@ -218,7 +231,7 @@
     // ---- click a picture to see it bigger ---------------------------------------------------------------------------------------
 
     function zoom(id) {
-        if (!idOk(id) || !root.document || root.document.getElementById('coverZoom')) return;
+        if (!keyOk(id) || !root.document || root.document.getElementById('coverZoom')) return;
         const doc = root.document;
         const back = doc.createElement('div');
         back.className = 'overlay';
@@ -226,7 +239,7 @@
         const img = doc.createElement('img');
         img.className = 'cover-zoom';
         img.alt = '';
-        img.src = COVER_URL + id;
+        img.src = srcOf(id);
         back.appendChild(img);
         const close = () => { doc.removeEventListener('keydown', onKey, true); back.remove(); };
         const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); } };
@@ -251,7 +264,7 @@
         });
     }
 
-    const exported = { configure, showing, rowClass, thumbHtml, descSlot, afterPaint, handleAction, buildDescription, pictureWanted, _state: { picLoaded, picFailed, descLines, descOpen } };
+    const exported = { configure, showing, rowClass, thumbHtml, descSlot, afterPaint, handleAction, buildDescription, pictureWanted, coverKey, _state: { picLoaded, picFailed, descLines, descOpen } };
     if (typeof module !== 'undefined' && module.exports) module.exports = exported;
     else root.modCovers = exported;
 }(typeof window !== 'undefined' ? window : globalThis));

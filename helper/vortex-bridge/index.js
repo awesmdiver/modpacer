@@ -353,6 +353,30 @@ function getNeedToDeploy(api) {
     }
 }
 
+// The notifications Vortex is showing right now (GET /notifications, 0.31.0), read only: plain text
+// fields only (id, type, title, message, group), never actions/callbacks or any non-string value.
+// Source: state.session.notifications.notifications (Vortex reducers/notifications.ts); the
+// "global_notifications" list is a different thing and is not read. Capped in count and length.
+// A missing slice is an empty list, not an error. The plugin-sort failure is id "loot-cycle-warning".
+const NOTIFICATIONS_MAX = 100;
+const NOTIFICATION_TEXT_MAX = 2000;
+function getNotifications(api) {
+    const state = api.store.getState();
+    const raw = state && state.session && state.session.notifications
+        && Array.isArray(state.session.notifications.notifications)
+        ? state.session.notifications.notifications : [];
+    const text = (v) => (typeof v === 'string' ? v.slice(0, NOTIFICATION_TEXT_MAX) : null);
+    const list = [];
+    for (const n of raw) {
+        if (list.length >= NOTIFICATIONS_MAX) break;
+        if (!n || typeof n !== 'object') continue;
+        const entry = { id: text(n.id), type: text(n.type), title: text(n.title), message: text(n.message) };
+        if (typeof n.group === 'string') entry.group = text(n.group);
+        list.push(entry);
+    }
+    return { notifications: list };
+}
+
 // Full `state.persistent.mods[GAME_ID]` object, live -- the SAME data vortex-collection-tools' own
 // `buildModIndex(db)` builds by iterating every `persistent###mods###${GAME_ID}###*` LevelDB key
 // (lib/rules-generator.js). This is the whole subtree, not reshaped/filtered -- vortex-collection-tools'
@@ -2227,6 +2251,22 @@ function startServer(api) {
             return;
         }
 
+        // See getNotifications' own header comment. Read only, never dispatches.
+        if (req.method === 'GET' && req.url === '/notifications') {
+            let body;
+            let statusCode = 200;
+            try {
+                body = JSON.stringify(getNotifications(api));
+            } catch (err) {
+                log('error', '[vortex-bridge] /notifications failed', err.message);
+                statusCode = 500;
+                body = JSON.stringify({ error: err.message });
+            }
+            res.writeHead(statusCode, { 'Content-Type': 'application/json' });
+            res.end(body);
+            return;
+        }
+
         // Everything a Clean Up scan needs for the "downloads" half -- the whole downloads.files
         // subtree, live, matching cleanup-scan.js's own state.v2 iteration field for field
         // (localPath/state/game per download). Deliberately a separate endpoint from /mods rather
@@ -2376,7 +2416,7 @@ function startServer(api) {
         }
 
         res.writeHead(404, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Unknown route. Try GET /health, GET /rules/:modId, GET /mods, GET /downloads, GET /paths, GET /profiles, GET /plugins/:pluginName, POST /plugins/:pluginName/set-enabled, GET /health-check/settings, POST /health-check/settings, POST /rules/apply, POST /rules/apply-batch, POST /mods/set-attributes, POST /mods/set-archive-id, POST /mods/deploy, POST /mods/deploy-all, GET /mods/deploy-all/progress, POST /mods/set-enabled, POST /mods/set-enabled-batch, POST /mods/remove, POST /mods/remove-record-only, POST /mods/create, POST /mods/create-batch, POST /downloads/register-local, POST /downloads/set-installed, POST /downloads/remove-record-only, POST /downloads/remove, POST /notify, or POST /plugin-updater/notify' }));
+        res.end(JSON.stringify({ error: 'Unknown route. Try GET /health, GET /rules/:modId, GET /mods, GET /downloads, GET /paths, GET /profiles, GET /plugins/:pluginName, POST /plugins/:pluginName/set-enabled, GET /health-check/settings, POST /health-check/settings, POST /rules/apply, POST /rules/apply-batch, POST /mods/set-attributes, POST /mods/set-archive-id, POST /mods/deploy, POST /mods/deploy-all, GET /mods/deploy-all/progress, GET /notifications, POST /mods/set-enabled,POST /mods/set-enabled-batch, POST /mods/remove, POST /mods/remove-record-only, POST /mods/create, POST /mods/create-batch, POST /downloads/register-local, POST /downloads/set-installed, POST /downloads/remove-record-only, POST /downloads/remove, POST /notify, or POST /plugin-updater/notify' }));
     });
 
     server.on('error', (err) => {
@@ -2421,7 +2461,7 @@ function main(context) {
 // ever calls this module as a plain function, and never looks at any property on it, so attaching
 // these doesn't change how Vortex loads or runs the extension at all.
 main.__testables = {
-    getOneMod, getPluginFlagNames,
+    getOneMod, getPluginFlagNames, getNotifications,
     findModPacerInstallPath, findModPacerNodePath, shouldRunModPacerCheck, runModPacerCheck, triggerPluginModPacerCheck,
     modPacerSetUpState, MODPACER_NOT_SET_UP_MESSAGE, readModPacerCheckReason,
     notifyBodyFromCompatShape, sendBridgeNotification, getVortexPaths, MODPACER_INFO_PATH, getNeedToDeploy,

@@ -130,20 +130,20 @@ const setupUi = (function () {
     // Every on/off setting Settings has. The label and the group heading are read from the Settings page itself (one source, so
     // the two cannot drift); the hint lines under them stay in Settings only (director, 2026-10-07: the toggles explain themselves here). The order follows Settings; "Check when Vortex starts" is Vortex only and shares its value with the Bridge step.
     const OPTION_TOGGLES = [
-        { group: 'optionsField', id: 'showAdultToggle', name: 'adult' },
-        { id: 'deleteOldDownloadToggle', name: 'deleteOld' },
-        { id: 'keepLogToggle', name: 'keepLog' },
-        { id: 'tellNewModPacerToggle', name: 'tellNew' },
         { id: 'checkOnVortexStartToggle', name: 'checkstart', vortexOnly: true },
         { id: 'autoDownloadToggle', name: 'auto' },
+        { id: 'deleteOldDownloadToggle', name: 'deleteOld' },
+        { id: 'tellNewModPacerToggle', name: 'tellNew' },
+        { id: 'showAdultToggle', name: 'adult' },
+        { id: 'keepLogToggle', name: 'keepLog' },
     ];
     const OPTION_KEYS = { deleteOld: 'deleteOldDownloadAfterUpdate', keepLog: 'keepLog', tellNew: 'tellNewModPacer' };
     const optionOn = (name) => (name === 'auto' ? !!S.autoDownload : name === 'checkstart' ? !!S.checkOnStart : !!(S.opt && S.opt[name]));
     function optionToggles() {
-        return OPTION_TOGGLES.filter((t) => !t.vortexOnly || S.manager === 'vortex').map((t) => {
+        return OPTION_TOGGLES.filter((t) => !t.vortexOnly || S.manager === 'vortex').map((t, i) => {
             const label = $(t.id) && $(t.id).closest('label');
             if (!label) return '';
-            const heading = t.group && $(t.group) && $(t.group).querySelector('.label');
+            const heading = i === 0 && $('optionsField') && $('optionsField').querySelector('.label'); // the group heading from Settings, once, above the first switch
             const action = t.name === 'auto' ? 'toggle-auto' : t.name === 'checkstart' ? 'toggle-checkstart' : 'toggle-opt';
             return `${heading ? `<div class="su-lbl" style="margin-top:14px">${escapeHtml(heading.textContent.trim())}</div>` : ''}
             <label class="toggle"><span class="sw${optionOn(t.name) ? '' : ' off'}" data-su="${action}" data-opt="${t.name}"></span><span><b>${escapeHtml(label.querySelector('b').textContent)}</b></span></label>`;
@@ -230,7 +230,7 @@ const setupUi = (function () {
         }
         return `<h2>Vortex Bridge ready</h2>
             ${dot('ok', S.helperStatus && S.helperStatus.version ? `Vortex Bridge ${escapeHtml(S.helperStatus.version)} is active and connected to ModPacer.` : 'Vortex Bridge is active and connected to ModPacer.', 'su-top su-gap')}
-            <label class="toggle"><span class="sw${S.checkOnStart ? '' : ' off'}" data-su="toggle-checkstart"></span><span><b>Check when Vortex starts</b></span></label>
+            <label class="toggle"><span class="sw${S.checkOnStart ? '' : ' off'}" data-su="toggle-checkstart"></span><span><b>Check for updates when Vortex starts</b></span></label>
             ${nav(back(), btn('next', flow.nextLabel(S.manager, S.index), 'primary'))}`;
     }
 

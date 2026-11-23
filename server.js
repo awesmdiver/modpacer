@@ -92,6 +92,7 @@ function buildApp() {
     app.disable('x-powered-by');
     app.use(require('./lib/local-guard').localGuard(logUpdate)); // first of all: only ModPacer's own page may talk to this server
     app.use(pageSecurityHeaders);
+    app.use('/api/helper-link', express.json({ limit: '32kb' })); // the helper's own reports are small; a bigger body is refused (413) before it is read further (the page's routes keep the default)
     app.use(express.json());
     app.use(express.static(path.join(__dirname, 'web', 'public')));
 
@@ -109,6 +110,20 @@ function buildApp() {
         res.setHeader('Cache-Control', 'no-store');
         try {
             const r = await hubCovers.getCover(catalogLib.findCachedEntry(req.params.id), appConfig.loadConfig());
+            if (!r.ok) return res.status(404).end();
+            const bytes = fs.readFileSync(r.file);
+            res.setHeader('Content-Type', r.mime);
+            res.setHeader('Cache-Control', 'private,max-age=86400');
+            res.end(bytes);
+        } catch { res.status(404).end(); }
+    });
+    // The picture of a mod followed from GitHub (queue: show-a-picture-for-github-tracked-mods...): from its newest release's text, else its README. Same rules as the
+    // Hub picture: ModPacer's own small saved copy, a 404 with nothing in it for everything else. The id is a tracked mod's own id; nothing from the page reaches a path or an address.
+    app.get('/api/github-cover/:id', async (req, res) => {
+        res.setHeader('Cache-Control', 'no-store');
+        try {
+            const rec = require('./lib/tracked-mods').get(String(req.params.id));
+            const r = rec ? await require('./lib/github-covers').getForTracked(rec, appConfig.loadConfig()) : { ok: false };
             if (!r.ok) return res.status(404).end();
             const bytes = fs.readFileSync(r.file);
             res.setHeader('Content-Type', r.mime);
@@ -249,14 +264,10 @@ function buildApp() {
     app.post('/api/plugins/:id/exclude', async (req, res) => {
         const r = engine.excludeMod(req.params.id);
         if (!r.ok) return res.status(r.status).json({ error: r.error });
-        if (!r.unverified) return res.json(engine.getState());
-        try { // an installed mod that could not be verified moves out of the installed rows at once, not at the next check
-            await engine.check({ force: false });
-            await engine.refreshUpdatePreviews();
-            res.json(engine.getState());
-        } catch (e) {
-            res.status(500).json({ error: e.message });
-        }
+        // The answer is built from the saved list, so an installed mod is already in Excluded in it (engine.getState); the check that tidies the rest runs
+        // behind it (Vortex can take 25 s to answer, and the person must not wait for that). A later check keeps the exclusion (it reads the list again).
+        if (r.unverified) engine.check({ force: false }).then(() => engine.refreshUpdatePreviews()).catch(() => {});
+        res.json(engine.getState());
     });
     app.post('/api/plugins/:id/skip-update', (req, res) => {
         const r = engine.skipUpdate(req.params.id);
@@ -274,6 +285,158 @@ function buildApp() {
         } catch (e) {
             res.status(500).json({ error: e.message });
         }
+    });
+
+    // ModPacer 2.0, part 1: the + button. Every route is behind the same local guard as the rest (exact Host, own Origin, the custom header, JSON only, no CORS).
+    // Step 2 of the pop-up: read the repository once and say what was found (and what the mod manager holds, for step 3). Reaches api.github.com only.
+    const text = (v) => (typeof v === 'string' ? v : '');
+    app.post('/api/tracked/read', async (req, res) => {
+        try {
+            const r = await engine.trackedPreview(text(req.body && req.body.address));
+            res.status(r.ok ? 200 : 400).json(r);
+        } catch (e) { res.status(500).json({ error: 'Couldn’t read that page just now.' }); }
+    });
+    // ModPacer 2.0, part 2: a folder on this PC. Step 2 reads the folder (read-only, names and dates only) and says how the newest file reads with the pattern.
+    app.post('/api/tracked/read-folder', async (req, res) => {
+        try {
+            const b = req.body || {};
+            const r = await engine.trackedPreviewFolder({ folder: text(b.folder), pattern: text(b.pattern), exclude: text(b.exclude), variant: text(b.variant) });
+            res.status(r.ok ? 200 : 400).json(r);
+        } catch (e) { res.status(500).json({ error: 'Couldn\u2019t read that folder just now.' }); }
+    });
+    app.post('/api/tracked', async (req, res) => {
+        try {
+            const b = req.body || {};
+            const link = b.link && typeof b.link === 'object' && typeof b.link.key === 'string' ? { key: b.link.key } : null;
+            const version = typeof b.version === 'string' || typeof b.version === 'number' ? String(b.version) : '';
+            const r = b.source === 'loverslab'
+                ? await engine.trackedAdd({ source: 'loverslab', name: text(b.name), address: text(b.address), version, link, application: b.application === true, requestId: text(b.requestId).slice(0, 80) })
+                : b.source === 'folder'
+                ? await engine.trackedAdd({ source: 'folder', name: text(b.name), folder: text(b.folder), pattern: text(b.pattern), exclude: text(b.exclude), variant: text(b.variant), version, link, application: b.application === true })
+                : await engine.trackedAdd({ name: text(b.name), address: text(b.address), version, link, application: b.application === true });
+            if (!r.ok) return res.status(400).json({ error: r.error, field: r.field || null });
+            res.json(engine.getState());
+        } catch (e) { res.status(500).json({ error: 'Couldn’t add that mod just now.' }); }
+    });
+    app.post('/api/tracked/:id/stop', (req, res) => {
+        const r = engine.trackedStop(req.params.id);
+        if (!r.ok) return res.status(r.status).json({ error: r.error });
+        res.json(engine.getState());
+    });
+    // ModPacer 2.0, part 3: a mod may have several sources, and one can be pinned. Each answers with the new state.
+    // An application (ModPacer 2.0): Download asks where to save (the page's folder window) and saves only there; "I've updated it"; Open folder on a saved file.
+    app.post('/api/tracked/:id/app-download', async (req, res) => {
+        try {
+            const b = req.body || {};
+            const r = await engine.trackedAppDownload(req.params.id, { asset: typeof b.asset === 'string' ? b.asset : null, folder: text(b.folder), onExisting: b.onExisting === 'replace' || b.onExisting === 'both' ? b.onExisting : null });
+            if (!r.ok) return res.status(r.status || 400).json({ error: r.error, kind: r.kind || null, fileName: r.fileName || null });
+            res.json(engine.getState());
+        } catch (e) { res.status(500).json({ error: 'Couldn\u2019t start that download just now.' }); }
+    });
+    app.post('/api/tracked/:id/updated', (req, res) => {
+        const r = engine.trackedAppUpdated(req.params.id);
+        if (!r.ok) return res.status(r.status || 400).json({ error: r.error });
+        res.json(engine.getState());
+    });
+    app.post('/api/tracked/:id/open-saved', (req, res) => {
+        const dir = engine.trackedSavedFolder(req.params.id);
+        if (!dir) return res.status(404).json({ error: 'There is no saved file to show.' });
+        try { require('./lib/open-download-folder').openDownloadFolder(dir); res.json({ ok: true }); } catch (e) { res.status(400).json({ error: e.message }); }
+    });
+    app.post('/api/tracked/:id/add-source', async (req, res) => {
+        try {
+            const b = req.body || {};
+            const r = await engine.trackedAddSource(req.params.id, b.source === 'folder'
+                ? { source: 'folder', folder: text(b.folder), pattern: text(b.pattern), exclude: text(b.exclude), variant: text(b.variant) }
+                : b.source === 'loverslab' ? { source: 'loverslab', address: text(b.address) } : { source: 'github', address: text(b.address) });
+            if (!r.ok) return res.status(r.status || 400).json({ error: r.error });
+            res.json(engine.getState());
+        } catch (e) { res.status(500).json({ error: 'Couldn\u2019t add that place just now.' }); }
+    });
+    app.post('/api/tracked/:id/remove-source', (req, res) => {
+        const r = engine.trackedRemoveSource(req.params.id, text(req.body && req.body.sourceId));
+        if (!r.ok) return res.status(r.status || 400).json({ error: r.error });
+        res.json(engine.getState());
+    });
+    app.post('/api/tracked/:id/pin', (req, res) => {
+        const sid = req.body && req.body.sourceId;
+        const r = engine.trackedPin(req.params.id, sid === null || sid === undefined || sid === '' ? null : text(sid));
+        if (!r.ok) return res.status(r.status || 400).json({ error: r.error });
+        res.json(engine.getState());
+    });
+    app.post('/api/tracked/:id/choose-source', (req, res) => {
+        const r = engine.trackedChoose(req.params.id, text(req.body && req.body.sourceId));
+        if (!r.ok) return res.status(r.status || 400).json({ error: r.error });
+        res.json(engine.getState());
+    });
+    app.post('/api/tracked/:id/update-folder', (req, res) => {
+        try {
+            const r = engine.trackedUpdateFolder(req.params.id, text(req.body && req.body.folder));
+            if (!r.ok) return res.status(r.status || 400).json({ error: r.error });
+            res.json(engine.getState());
+        } catch (e) { res.status(500).json({ error: 'Couldn\u2019t read that folder just now.' }); }
+    });
+    // "Open folder": opens the folder a followed row watches in the file manager (only one the person chose and ModPacer still allows). Nothing in it is read or changed.
+    app.post('/api/tracked/:id/open-folder', (req, res) => {
+        const dir = engine.trackedFolderOf(req.params.id, req.body && typeof req.body.sourceId === 'string' ? req.body.sourceId : null);
+        if (!dir) return res.status(404).json({ error: 'That mod has no folder to open.' });
+        try { require('./lib/open-download-folder').openDownloadFolder(dir); res.json({ ok: true }); } catch (e) { res.status(400).json({ error: e.message }); }
+    });
+    app.post('/api/tracked/:id/update-link', async (req, res) => {
+        try {
+            const r = await engine.trackedUpdateLink(req.params.id, text(req.body && req.body.address));
+            if (!r.ok) return res.status(r.status || 400).json({ error: r.error });
+            res.json(engine.getState());
+        } catch (e) { res.status(500).json({ error: 'Couldn’t read that page just now.' }); }
+    });
+    app.post('/api/tracked/:id/checked', async (req, res) => {
+        try {
+            const r = await engine.trackedChecked(req.params.id, { version: text(req.body && req.body.version) });
+            if (!r.ok) return res.status(r.status || 400).json({ error: r.error });
+            res.json(engine.getState());
+        } catch (e) { res.status(500).json({ error: 'Couldn’t save that.' }); }
+    });
+
+    // ModPacer 2.0, part 4: LoversLab pages, read by the browser helper (an extension in the person's own browser). Two sets of routes:
+    //   * for ModPacer's own page (the normal local guard): the pop-up's reading of a page, and Settings' pairing and status;
+    //   * for the helper itself (/api/helper-link/*, see lib/local-guard.js): pair once with a code, ask what to read, report what was read. Each needs the helper's secret token;
+    //     a report is accepted only for a check ModPacer asked for and for exactly that page (lib/helper-link.js).
+    app.post('/api/tracked/read-page', (req, res) => {
+        try {
+            const r = engine.trackedPreviewPage(text(req.body && req.body.address));
+            res.status(r.ok ? 200 : 400).json(r);
+        } catch (e) { res.status(500).json({ error: 'Couldn\u2019t read that page just now.' }); }
+    });
+    app.get('/api/tracked/read-page/:requestId', async (req, res) => {
+        try { res.json(await engine.trackedPreviewPageResult(String(req.params.requestId).slice(0, 80))); } catch (e) { res.status(500).json({ error: 'Couldn\u2019t read that page just now.' }); }
+    });
+    app.get('/api/browser-helper', (req, res) => { res.setHeader('Cache-Control', 'no-store'); res.json(engine.helperStatus()); });
+    app.post('/api/browser-helper/code', (req, res) => res.json(engine.helperMakeCode()));
+    app.post('/api/browser-helper/revoke', (req, res) => res.json(engine.helperRevoke()));
+    app.post('/api/browser-helper/check', (req, res) => res.json(engine.helperCheckNow()));
+    app.post('/api/browser-helper/open-folder', (req, res) => {
+        const bundle = require('./lib/browser-helper-bundle');
+        if (!bundle.isBundled()) return res.status(404).json({ error: 'ModPacer is missing the browser helper folder.' });
+        try { require('./lib/open-download-folder').openDownloadFolder(bundle.folder()); res.json({ ok: true }); } catch (e) { res.status(400).json({ error: 'ModPacer couldn\u2019t open that folder.' }); }
+    });
+    const helperToken = (req) => { const m = /^Bearer ([A-Za-z0-9]{20,200})$/.exec(String(req.headers.authorization || '')); return m ? m[1] : null; };
+    const helperOnly = (req, res) => {
+        const b = req.body || {};
+        const ok = require('./lib/helper-link').authorize(helperToken(req), req.headers.origin, { helperVersion: typeof b.helperVersion === 'string' ? b.helperVersion : undefined, browser: typeof b.browser === 'string' ? b.browser : undefined });
+        if (!ok) res.status(401).json({ error: 'Not paired.' });
+        return ok;
+    };
+    app.post('/api/helper-link/pair', (req, res) => {
+        const r = engine.helperPair(req.body, String(req.headers.origin || ''));
+        if (!r.ok) return res.status(r.reason === 'locked' ? 429 : 400).json({ error: 'That code did not work.', reason: r.reason });
+        res.json({ ok: true, token: r.token });
+    });
+    app.post('/api/helper-link/poll', (req, res) => { if (helperOnly(req, res)) res.json(engine.helperPoll()); });
+    app.post('/api/helper-link/report', (req, res) => {
+        if (!helperOnly(req, res)) return;
+        const r = engine.helperReport(req.body);
+        if (!r.ok) return res.status(400).json({ error: "ModPacer didn't ask for that." });
+        res.json({ ok: true });
     });
 
     // "I have this" / "I updated it" / "I don't have this" on a program row: saved in ModPacer's own list, answered with the new state (no check, no Vortex).
@@ -908,6 +1071,7 @@ if (require.main === module) {
     } else {
         logStart('window', PORT);
         engine.startFresh(); // start fresh: forget unfinished-update bookkeeping; start-up only reads, never cleans up or retries
+        engine.startTrackedChecks(); // the mods added with the + button are looked at again every few hours, quietly (one at a time, each with its own back-off)
         const app = buildApp();
         vortexUpdate.setConnectionListener(createVortexConsoleNotes());
         // This PC only (queue: modpacer-gets-a-real-windows-installer, 2026-10-05): listening on 127.0.0.1 means nothing else on the network can reach

@@ -32,12 +32,14 @@
       <div class="inline">
         <button id="checkNowBtn">Check now</button>
         <button id="openDownloadFolderBtn">Open download folder</button>
+        <button id="addModBtn" class="plus-btn" type="button" title="Add a mod" aria-label="Add a mod">+</button>
         <button class="primary" id="downloadAllBtn" style="display:none">Download all</button>
       </div>
     </div>
     <div class="summary" id="summary"></div>
     <div class="legend-line" id="legendLine"></div>
     <div class="gather-line" id="gatherLine" role="status"></div>
+    <div class="helper-old-line" id="helperOldLine"></div>
     <div id="deployLine"></div>
     <div id="selfUpdateLine"></div>
     <p class="error" id="topError" style="display:none"></p>
@@ -52,13 +54,21 @@
 </div>
 
 <div id="settings" style="display:none">
-  <div class="card">
-    <h2>Settings</h2>
+  <div class="set-head"><h2>Settings</h2><div id="helperStatus"></div></div>
 
-    <div id="helperStatus" class="field"></div>
+  <div class="set-sec">Connections</div>
+  <div class="card set-card" id="browserHelperBox"></div>
 
-    <div class="field">
-      <div class="label">Downloads folder <span class="help" data-help="downloads" tabindex="0" role="button" aria-label="Help">?</span></div>
+  <div class="card set-card" id="nexusCard">
+    <h3 class="set-card-t">Nexus API key (Premium members)</h3>
+    <div id="nexusKeyField"></div>
+    <p class="muted set-hint">Lets Nexus mods download automatically. For free accounts, ModPacer opens the mod's page for you to download manually. Find your key on <a href="https://www.nexusmods.com/" target="_blank" rel="noopener noreferrer">Nexus Mods</a> &gt; Account &gt; Site preferences &gt; API Keys (scroll to the bottom).</p>
+  </div>
+
+  <div class="set-sec">Folders</div>
+  <div class="card set-card set-folders">
+    <div class="field set-frow">
+      <div class="set-flabel">Downloads folder <span class="help" data-help="downloads" tabindex="0" role="button" aria-label="Help">?</span></div>
       <div class="help-pop" id="help-downloads" role="tooltip">
         <div class="help-title">Where your downloaded updates go</div>
         <p>Pick your mod manager's downloads folder so it sees them right away:</p>
@@ -68,28 +78,28 @@
         </dl>
         <p>Or pick any folder you like if you'd rather add them to your mod manager by hand.</p>
       </div>
-      <div class="inline"><input type="text" id="downloadFolderInput" readonly><button data-browse="downloadFolderInput" data-title="Choose where to save mod updates">Browse&hellip;</button></div>
+      <input type="text" id="downloadFolderInput" readonly aria-label="Downloads folder"><button data-browse="downloadFolderInput" data-title="Choose where to save mod updates">Browse&hellip;</button>
     </div>
 
-    <div class="field" id="mo2FolderField" style="display:none">
-      <div class="label">Your Mod Organizer 2 folder <span class="muted">(the one with <code>ModOrganizer.exe</code>)</span></div>
-      <div class="inline"><input type="text" id="mo2FolderInput" readonly><button data-browse="mo2FolderInput" data-title="Choose your Mod Organizer 2 folder (the one with ModOrganizer.exe)">Browse&hellip;</button></div>
-      <div class="req-warn" id="mo2FolderProblem" style="display:none"></div>
+    <div class="field set-frow" id="mo2FolderField" style="display:none">
+      <div class="set-flabel">Your Mod Organizer 2 folder <span class="muted">(the one with <code>ModOrganizer.exe</code>)</span></div>
+      <input type="text" id="mo2FolderInput" readonly aria-label="Mod Organizer 2 folder"><button data-browse="mo2FolderInput" data-title="Choose your Mod Organizer 2 folder (the one with ModOrganizer.exe)">Browse&hellip;</button>
+      <div class="req-warn set-fwarn" id="mo2FolderProblem" style="display:none"></div>
     </div>
 
-    <div class="field">
-      <div class="label">Your Skyrim folder</div>
-      <div class="inline"><input type="text" id="skyrimInstallPathInput" readonly><button data-browse="skyrimInstallPathInput" data-title="Choose your Skyrim install folder">Browse&hellip;</button></div>
-      <p class="ok-t" id="skyrimInstallStatus"></p>
+    <div class="field set-frow">
+      <div class="set-flabel">Skyrim folder</div>
+      <input type="text" id="skyrimInstallPathInput" readonly aria-label="Skyrim folder"><button data-browse="skyrimInstallPathInput" data-title="Choose your Skyrim install folder">Browse&hellip;</button>
+      <p class="ok-t set-fwarn" id="skyrimInstallStatus"></p>
     </div>
 
-    <div class="field">
-      <div class="label">Your SkyrimNet folder <span class="muted">(only if ModPacer can't find it)</span></div>
-      <div class="inline"><input type="text" id="skyrimNetFolderInput" readonly><button data-browse="skyrimNetFolderInput" data-title="Choose the SkyrimNet folder (the one with a config folder inside)">Browse&hellip;</button></div>
+    <div class="field set-frow">
+      <div class="set-flabel">SkyrimNet folder <span class="muted">(optional)</span></div>
+      <input type="text" id="skyrimNetFolderInput" readonly aria-label="SkyrimNet folder"><button data-browse="skyrimNetFolderInput" data-title="Choose the SkyrimNet folder (the one with a config folder inside)">Browse&hellip;</button>
     </div>
 
-    <div class="field">
-      <div class="label" id="stagingLabel">Mod Staging Folder <span class="help" data-help="staging" tabindex="0" role="button" aria-label="Help">?</span></div>
+    <div class="field set-frow">
+      <div class="set-flabel" id="stagingLabel">Mod staging folder <span class="help" data-help="staging" tabindex="0" role="button" aria-label="Help">?</span></div>
       <div class="help-pop" id="help-staging" role="tooltip">
         <div class="help-title">Where your installed mods live</div>
         <p>Choose the folder where your mod manager keeps your installed mod files:</p>
@@ -103,27 +113,25 @@
         </dl>
         <p class="help-note"><b>Note:</b> Don't choose your game's own folder or the Data folder. Pick the folder your mod manager uses instead.</p>
       </div>
-      <div class="inline"><input type="text" id="vortexStagingFolderInput" readonly><button data-browse="vortexStagingFolderInput" data-title="Choose your Vortex mods staging folder">Browse&hellip;</button></div>
+      <input type="text" id="vortexStagingFolderInput" readonly aria-label="Mod staging folder"><button data-browse="vortexStagingFolderInput" data-title="Choose your Vortex mods staging folder">Browse&hellip;</button>
     </div>
+  </div>
 
-    <div class="field">
-      <div class="label">Nexus API key (Premium members)</div>
-      <div id="nexusKeyField"></div>
-      <p class="hint">If you have Nexus Premium, mods hosted on Nexus can download automatically too. Find your key on <a href="https://www.nexusmods.com/" target="_blank" rel="noopener noreferrer">Nexus Mods</a> &gt; Account &gt; Site preferences &gt; API Keys. Scroll to the bottom to view your key. Without Premium, you'll get a link to the mod's Nexus page instead.</p>
-    </div>
-
-    <div class="field" id="optionsField">
-      <div class="label">Options</div>
-      <label class="toggle"><span class="sw off" id="showAdultToggle"></span><span><b>Show adult (NSFW) mods</b></span></label>
-      <label class="toggle" id="deleteOldLabel"><span class="sw" id="deleteOldDownloadToggle"></span><span><b>Automatically remove previous version after update</b></span></label>
-      <div style="display:flex;align-items:center;gap:10px"><label class="toggle" style="flex:1"><span class="sw" id="keepLogToggle"></span><span><b>Enable logging</b></span></label><button class="su-muted" id="openLogFolderBtn">Open log folder</button></div>
-      <label class="toggle"><span class="sw" id="showModPicturesToggle"></span><span><b>Show mod pictures</b><div class="muted">Turn off for a more compact list.</div></span></label>
-      <label class="toggle"><span class="sw off" id="ignoreDisabledModsToggle"></span><span><b>Ignore disabled mods</b><div class="muted">Stop checking turned-off mods for updates and tuck them away in their own list.</div></span></label>
-      <label class="toggle"><span class="sw" id="tellNewModPacerToggle"></span><span><b>Notify when ModPacer updates are available</b></span></label>
-      <label class="toggle" id="checkOnVortexStartLabel"><span class="sw" id="checkOnVortexStartToggle"></span><span><b>Check when Vortex starts</b></span></label>
-      <label class="toggle"><span class="sw" id="autoDownloadToggle"></span><span><b>Download updates automatically</b></span></label>
-    </div>
-
+  <div id="optionsField">
+  <div class="set-sec"><span class="label">Preferences</span></div>
+  <div class="card set-card set-prefs">
+    <div class="set-grp">Updates</div>
+    <label class="toggle set-tog" id="checkOnVortexStartLabel"><span class="sw" id="checkOnVortexStartToggle"></span><span><b>Check for updates when Vortex starts</b></span></label>
+    <label class="toggle set-tog"><span class="sw" id="autoDownloadToggle"></span><span><b>Download updates automatically</b></span></label>
+    <label class="toggle set-tog" id="deleteOldLabel"><span class="sw" id="deleteOldDownloadToggle"></span><span><b>Automatically remove previous version after update</b></span></label>
+    <label class="toggle set-tog"><span class="sw" id="tellNewModPacerToggle"></span><span><b>Notify when ModPacer updates are available</b></span></label>
+    <div class="set-grp">Display</div>
+    <label class="toggle set-tog"><span class="sw" id="showModPicturesToggle"></span><span><b>Show mod pictures</b><div class="muted">Turn off for a more compact list.</div></span></label>
+    <label class="toggle set-tog"><span class="sw off" id="showAdultToggle"></span><span><b>Show adult (NSFW) mods</b></span></label>
+    <label class="toggle set-tog"><span class="sw off" id="ignoreDisabledModsToggle"></span><span><b>Ignore disabled mods</b><div class="muted">Skip disabled mods when checking for updates and move them to a separate list.</div></span></label>
+    <div class="set-grp">Troubleshooting</div>
+    <div class="set-tog set-tog-btn"><label class="toggle set-tog-in"><span class="sw" id="keepLogToggle"></span><span><b>Enable logging</b></span></label><button class="su-muted" id="openLogFolderBtn">Open log folder</button></div>
+  </div>
   </div>
 
   <div class="card" id="moreFromMe"></div>
@@ -216,6 +224,44 @@
   </div>
 </div>
 
+<!-- ModPacer 2.0, part 1: Add a mod (web/public/add-mod.js fills the body; one fixed-size card for all steps) and the small question the row menu asks. -->
+<div id="addModOverlay" class="overlay" style="display:none">
+  <div class="card confirm-card add-mod-card" role="dialog" aria-labelledby="addModTitle">
+    <h2 id="addModTitle">Add a mod</h2>
+    <div id="addModBody"></div>
+    <div class="add-mod-msg" id="addModMsg" role="status"></div>
+    <div class="inline" style="justify-content:flex-end;margin-top:14px" id="addModButtons"></div>
+  </div>
+</div>
+<!-- An application (ModPacer 2.0): Download asks which file (when there are several) and where to save it, every time. -->
+<div id="appDownloadOverlay" class="overlay" style="display:none">
+  <div class="card confirm-card add-mod-card" role="dialog" aria-labelledby="appDownloadTitle">
+    <h2 id="appDownloadTitle"></h2>
+    <div id="appDownloadBody"></div>
+    <div class="add-mod-msg" id="appDownloadMsg" role="status"></div>
+    <div class="inline" style="justify-content:flex-end;margin-top:14px" id="appDownloadButtons"></div>
+  </div>
+</div>
+<!-- The browser helper pop-up (ModPacer 2.0): opens from Add a mod when LoversLab is chosen and no helper is connected. -->
+<div id="bhPopOverlay" class="overlay" style="display:none">
+  <div class="card confirm-card add-mod-card bhp-card" role="dialog" aria-labelledby="bhpTitle">
+    <h2 id="bhpTitle">Set up the browser helper</h2>
+    <div id="bhpBody"></div>
+    <div class="inline bhp-foot" style="justify-content:flex-end"><button id="bhpClose" class="btn-muted">Not now</button></div>
+  </div>
+</div>
+<div id="trackedAskOverlay" class="overlay" style="display:none">
+  <div class="card confirm-card add-mod-card" role="dialog" aria-labelledby="trackedAskTitle">
+    <h2 id="trackedAskTitle"></h2>
+    <div class="field"><label id="trackedAskLabel" for="trackedAskInput"></label><input type="text" id="trackedAskInput" autocomplete="off" spellcheck="false"></div>
+    <div class="add-mod-msg" id="trackedAskMsg" role="status"></div>
+    <div class="inline" style="justify-content:flex-end;margin-top:14px">
+      <button id="trackedAskCancel">Cancel</button>
+      <button class="primary" id="trackedAskOk">Save</button>
+    </div>
+  </div>
+</div>
+
 <div id="confirmOverlay" class="overlay" style="display:none">
   <div class="card confirm-card">
     <h2 id="confirmTitle">Update</h2>
@@ -268,6 +314,8 @@
 <script src="setup-flow.js"></script>
 <script src="setup.js"></script>
 <script src="fomod-picker.js"></script>
+<script src="add-mod.js"></script>
+<script src="browser-helper.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
